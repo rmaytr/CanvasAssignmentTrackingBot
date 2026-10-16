@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft v0.1, for review |
+| **Status** | Draft v0.2. The owner's answers to Q1–Q4 are folded in. |
 | **Date** | 2026-10-16 |
 | **Owner** | [@rmaytr](https://github.com/rmaytr) |
 | **Research behind it** | [`reports/Canvas assignment reminder bot.md`](../reports/Canvas%20assignment%20reminder%20bot.md) and its notes in [`research_notes/`](../research_notes/) |
@@ -98,7 +98,7 @@ The target running cost is **$0/month**. It runs on a Raspberry Pi, an always-on
 
 | Area | Decision | Tag |
 |---|---|---|
-| Data source, primary (Mode A) | Canvas REST `GET /api/v1/planner/items` with the student's personal access token | [Research] |
+| Data source, primary (Mode A) | Canvas REST `GET /api/v1/planner/items` with the student's personal access token. The owner's school allows student tokens. | [Research] + [Owner] |
 | Data source, fallback (Mode B) | Canvas calendar (iCal) feed + manual Done | [Research] |
 | Session-cookie scraping (Mode C) | Not in v1. Maybe later as an off-by-default experimental mode. | [Research] |
 | Screenshots / OCR (Mode E) | Not in v1. Maybe a later "paste a screenshot" helper using local OCR only. | [Research] / [Design call] |
@@ -108,14 +108,14 @@ The target running cost is **$0/month**. It runs on a Raspberry Pi, an always-on
 | SMS | Out of scope, documented in the README | [Research] |
 | Digest time | 08:00 local, configurable | [Owner] |
 | Reminder rule | Every 2 h while any not-done item is due in < 24 h, combined into **one** message per cycle | [Owner] + [Research] |
-| Quiet hours | Default 00:00–08:00, with a "due overnight" warning before they start | [Research] / [Open] Q4 |
-| After the deadline | One "now overdue" notice, then digest only. Continued 2-hour reminders are opt-in. | [Research] / [Open] Q3 |
+| Quiet hours | 00:00–08:00, with a "due overnight" warning at 23:30 | [Owner] (Q4) |
+| After the deadline | One "now overdue" notice, then digest only. Continued 2-hour reminders are opt-in. | [Owner] (Q3) |
 | Prioritization | Transparent 100-point score (urgency + importance + effort) → URGENT / HIGH / MEDIUM / LOW | [Research] |
 | Language and runtime | Python 3.13+, asyncio, single process | [Research] |
 | Libraries | python-telegram-bot 22.x, httpx (small custom Canvas client), pydantic-settings, zoneinfo + tzdata, stdlib sqlite3 | [Research] / [Design call] |
 | Storage | SQLite in WAL mode on a local volume | [Research] |
 | Scheduling | One idempotent tick loop (no per-reminder jobs, no GitHub Actions cron) | [Research] |
-| Hosting | Docker Compose on a Pi, home PC, Oracle Always Free, GCP e2-micro, or a ~€5 VPS | [Research] / [Open] Q2 |
+| Hosting | **Recommended: Google Cloud e2-micro free tier** (Docker Compose on a small Linux VM). Alternatives: Oracle Always Free, a Raspberry Pi or always-on PC, or a ~€5 VPS. | [Design call]; the owner asked for a recommendation (Q2) |
 | Monitoring | healthchecks.io heartbeat + `/status` command | [Research] |
 | License | Apache-2.0 | [Research] |
 
@@ -315,7 +315,7 @@ This is the core feature. [Owner]: "when it's less than 24 hours left… every 2
 | Snooze 2h | `snoozed_until = min(now + 2 h, due_at − 30 min)`. When a snooze ends and the item is still urgent, send a single-item reminder `snz:{item}:{snoozed_until}`, so snoozing never swallows the last 30 minutes. | [Design call] |
 | Due date extended | Clear the item's done, snooze and stop state; it re-enters the rule against the new `due_at`. | [Research] |
 | **Due overnight** | At `QUIET_START − 30 min` (default 23:30), if any not-done item is due before `QUIET_END`, send one warning `overnight:{local_date}`: "Due while you sleep: …". | [Research] |
-| **Deadline passes, not done** | Send one "now overdue" notice `overdue:{item}:{due_at}` (during quiet hours it waits for the digest). Then the item is digest-only, under Overdue. | [Research] / [Open] Q3 |
+| **Deadline passes, not done** | Send one "now overdue" notice `overdue:{item}:{due_at}` (during quiet hours it waits for the digest). Then the item is digest-only, under Overdue. | [Owner] (Q3) |
 | `OVERDUE_REMINDERS=true` (opt-in) | After the deadline, keep the 2-hour cadence while Canvas still accepts the work (`lock_at` empty or in the future), for at most `OVERDUE_REMINDER_MAX` (default 48 h). The student can stop it with 🔕. | [Design call] |
 | Pause (`/pause 3h`) | Reminders and alerts are muted. The digest still goes out. When the pause ends, the next due slot fires normally. | [Design call] |
 
@@ -832,15 +832,31 @@ A checklist run against a real Canvas account and Telegram:
   - secrets from files, `HEALTHCHECK`
   - log rotation (`max-size: 10m`, `max-file: 3`), so a Pi's SD card doesn't fill
   - the container hardening options from [§10.2](#102-required-controls).
-- **Hosting guides** in `docs/setup/`:
+- **Recommended host: Google Cloud e2-micro free tier** [Design call]. The owner asked for a recommendation.
+  - **Why this one:**
+    - It costs $0 and doesn't sleep.
+    - Unlike Oracle's free tier, idle machines aren't reclaimed.
+    - The bot needs about 100 MB of RAM and almost no network traffic, so 1 GB of RAM is plenty.
+    - It only makes outbound connections, so no ports need opening.
+  - **Setup rules the guide must spell out, so it stays at $0:**
+    - Region **us-west1, us-central1 or us-east1**.
+    - A **standard** persistent disk of 30 GB or less (not balanced or SSD).
+    - An ephemeral IP, so no paid static IP.
+    - A **$1 budget alert**.
+    - No other paid services.
+  - **Caveats:**
+    - Signing up needs a card for verification.
+    - The free-tier figures came from third-party sources in the research, so the guide links Google's own free-tier page and tells users to check it.
+  - **During development**, the owner runs the bot on their own computer with `uv run`; it only needs to be online while testing.
+- **Hosting guides** in `docs/setup/`, recommended one first:
 
   | Guide | Covers |
   |---|---|
+  | **Google Cloud e2-micro (recommended)** | The $0 rules above; Ubuntu LTS minimal + Docker |
+  | Oracle Cloud Always Free A1 | Upgrade to Pay-As-You-Go so idle instances aren't reclaimed; stays $0 within the free limits |
   | Raspberry Pi | arm64 image; an SSD or a good SD card |
   | Always-on PC | Docker Desktop or plain Python with `uv run` |
-  | Oracle Cloud Always Free A1 | Upgrade to Pay-As-You-Go so idle instances aren't reclaimed; stays $0 within the free limits |
-  | Google Cloud e2-micro | us-west1, us-central1 or us-east1 only |
-  | Generic VPS (~€5/month) | Any small Linux server |
+  | Generic VPS (~€5/month) | Any small Linux server; the simplest paid option |
 
   Each guide ends with "set up the healthchecks.io heartbeat".
 - **Not recommended:** GitHub Actions cron (late or dropped runs, no buttons), and free tiers that sleep (Render, Koyeb). The README explains why.
@@ -898,8 +914,8 @@ A checklist run against a real Canvas account and Telegram:
 | Milestone | Scope | Exit criteria |
 |---|---|---|
 | **M0: Spike (≈1 week)** | Small throwaway scripts that the **owner runs on their own machine** against their real Canvas and Telegram, to settle the open technical questions (S1–S8 in [§17](#17-open-questions)). Includes a scrubber that strips tokens and personal data from recorded responses before they are committed. | Written spike notes; scrubbed fixtures committed; Mode A or B confirmed as the owner's primary mode |
-| **M1: Personal MVP** | Mode A (or B, depending on M0); done rule; priority; digest; reminder cycles with quiet hours, overdue and snooze; Telegram gate, pairing, buttons, `/today` `/week` `/sync` `/status` `/pause` `/digest`; SQLite; Docker; the core test suites in [§11.2](#112-required-test-suites). The pure core (`domain/`, `planning/`, `render/`) doesn't depend on spike results, so it can start in parallel with M0. | Runs on the owner's host for **2 weeks** with no duplicates, no false nags and every digest on time. DST correctness is proven by the simulation suite. **There is no calendar deadline.** If a real clock change falls inside the run, it is watched as a bonus check; otherwise the next ones are US 2027-03-14 and EU 2027-03-28. |
-| **M2: Public v1.0** | The other mode (B or A); email backup; token-expiry warnings; circuit breaker and alerts; heartbeat; full security controls; CI/CD with image releases; all docs; the full test plan, including property tests, simulation and mutation testing | Every acceptance item in [§11.6](#116-manual-acceptance-before-each-release) passes; a fresh self-hoster gets a digest within 15 minutes; repository settings applied; tagged v1.0.0 |
+| **M1: Personal MVP** | Mode A (the owner's school allows tokens); done rule; priority; digest; reminder cycles with quiet hours, overdue and snooze; Telegram gate, pairing, buttons, `/today` `/week` `/sync` `/status` `/pause` `/digest`; SQLite; Docker; the core test suites in [§11.2](#112-required-test-suites). The pure core (`domain/`, `planning/`, `render/`) doesn't depend on spike results, so it can start in parallel with M0. | Runs on the owner's host for **2 weeks** with no duplicates, no false nags and every digest on time. DST correctness is proven by the simulation suite. **There is no calendar deadline.** If a real clock change falls inside the run, it is watched as a bonus check; otherwise the next ones are US 2027-03-14 and EU 2027-03-28. |
+| **M2: Public v1.0** | Mode B (calendar feed) for students at schools that block tokens; email backup; token-expiry warnings; circuit breaker and alerts; heartbeat; full security controls; CI/CD with image releases; all docs; the full test plan, including property tests, simulation and mutation testing | Every acceptance item in [§11.6](#116-manual-acceptance-before-each-release) passes; a fresh self-hoster gets a digest within 15 minutes; repository settings applied; tagged v1.0.0 |
 | **M3: v1.x** | `/mute`, `/settings`, effort-estimate button, a "when will you start?" prompt for HIGH items (commitment devices had strong evidence), a Sunday weekly overview, exam countdown, ntfy and Pushover notifiers, the submission lead-time log, "sync Done to Canvas" ([§7.6](#76-telegram-bot)) | Each feature behind settings, with tests |
 | **Later / maybe** | Session-cookie mode (experimental, off by default); a local-OCR screenshot helper; calendar export; translations; OAuth multi-user for schools that issue developer keys (a separate project) | Separate PRD addendum |
 
@@ -921,7 +937,8 @@ A checklist run against a real Canvas account and Telegram:
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| The owner's school blocks student tokens | Medium | High | Mode B is a first-class mode; M0 checks this first |
+| The owner's school blocks student tokens later (a policy change) | Low (allowed today) | High | Mode B is a first-class mode in v1.0 |
+| Another self-hoster's school blocks tokens | High | Medium | Mode B; the README's "Is this allowed at my school?" section |
 | Token expiry (at most 120 days) forgotten | High | Medium | 14/7/3/1-day warnings; the 401 alert; renewal without a restart |
 | Canvas changes the API or enforcement (as with the 2026 User-Agent rule) | Medium | High | Contract tests; quick patch releases; User-Agent on every request |
 | Reminders get ignored (fatigue) | Medium | High | One combined message, quiet hours, snooze, varied wording, opt-in overdue cadence; tune using the lead-time log |
@@ -936,15 +953,16 @@ A checklist run against a real Canvas account and Telegram:
 
 ## 17. Open questions
 
-### For the owner (they change what gets built)
+### For the owner
 
-| # | Question | Default if unanswered |
+| # | Question | Answer |
 |---|---|---|
-| Q1 | **Can you create a Canvas access token at your school?** (Account → Settings → "+ New Access Token".) Which school, or what is your Canvas web address? | Plan for Mode A; build Mode B first if tokens are blocked |
-| Q2 | **Where will the bot run?** An always-on computer or Raspberry Pi you own, or a free cloud VM (needs a card for verification)? | Docker on any always-on Linux host |
-| Q3 | **After a deadline passes without a submission**, keep reminding every 2 hours while Canvas still accepts late work, or send one "overdue" notice and leave it in the digest? | One notice, then digest only (opt-in setting to continue) |
-| Q4 | **At night**, is quiet time from midnight to 8:00 right, or do you want reminders around the clock? | Quiet 00:00–08:00 with a "due overnight" warning at 23:30 |
-| Q5 | Do you use Telegram already, and do you want an email copy of the morning digest? | Telegram only; email off |
+| Q1 | Can you create a Canvas access token at your school? | **Yes**, the "+ New Access Token" button is there. Mode A is the owner's mode; Mode B ships in v1.0 for other schools. |
+| Q2 | Where will the bot run? | **"Recommend one"**: Google Cloud e2-micro free tier ([§12](#12-deployment-and-distribution)); the owner's own computer during development. |
+| Q3 | After a missed deadline, keep reminding or send one notice? | **One "overdue" notice**, then the item stays in the digest (continuing is an opt-in setting). |
+| Q4 | Quiet hours at night? | **00:00–08:00**, with a "due overnight" warning at 23:30. |
+| Q5 | Do you use Telegram already, and do you want an email copy of the morning digest? | Not asked yet. Default: Telegram only, email off. Confirm during M0. |
+| Q6 | Which IANA time zone is yours (e.g. `America/Chicago`)? | Set at setup time; not a design question. |
 
 ### For the M0 spike (technical)
 
