@@ -6,7 +6,7 @@ the owner, or from any non-private chat, are dropped without a reply.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from datetime import time, timedelta
 from typing import Any
 
@@ -19,7 +19,7 @@ from canvas_tracker.bot.pairing import PairingResult
 from canvas_tracker.render import copy
 from canvas_tracker.store.repo import OWNER_ID
 
-Handler = Callable[[Update, Any], Awaitable[None]]
+Handler = Callable[[Update, Any], Coroutine[Any, Any, None]]
 _PAIRING_REPLIES = {
     PairingResult.WRONG: copy.PAIR_WRONG,
     PairingResult.EXPIRED: copy.PAIR_EXPIRED,

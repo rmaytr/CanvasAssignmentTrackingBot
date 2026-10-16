@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine
 from datetime import datetime
 from typing import Any, Literal
 
@@ -62,7 +62,7 @@ def _undo_keyboard(markup: InlineKeyboardMarkup | None, db_id: int) -> InlineKey
     return InlineKeyboardMarkup(rows)
 
 
-def on_callback(deps: BotDeps) -> Callable[[Update, Any], Awaitable[None]]:
+def on_callback(deps: BotDeps) -> Callable[[Update, Any], Coroutine[Any, Any, None]]:
     async def handler(update: Update, _context: Any) -> None:
         query = update.callback_query
         if query is None:

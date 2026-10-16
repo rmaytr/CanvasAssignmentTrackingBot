@@ -92,3 +92,35 @@ UNDO_EXPIRED = "Too late to undo. It reopens by itself if its due date changes."
 STOPPED = "No more reminders for this one 🔕"
 ITEM_GONE = "That item is no longer on your list."
 UNDO_BUTTON = "✔️ {n} done · ↩️ Undo"
+
+# Views and commands
+TODAY_HEADER = "📋 Today, {date}"
+NOTHING_TODAY = "Nothing due today 🎉"
+WEEK_HEADER = "🗓 Next 7 days"
+NOTHING_WEEK = "Nothing due in the next 7 days 🎉"
+TIER_MEDIUM = "🟡 MEDIUM"
+TIER_LOW = "⚪ LOW"
+STATUS_LINES = (
+    "Last sync: {sync}",
+    "Token: {token}",
+    "Next digest: {digest}",
+    "Next reminder: {slot}",
+    "{pause}",
+    "Version: {version}",
+)
+STATUS_NEVER = "never"
+STATUS_AUTH_OK = "OK"
+STATUS_AUTH_FAILED = "failed since {since}"
+STATUS_NO_SLOT = "none scheduled"
+STATUS_REMINDERS_ON = "Reminders: on"
+STATUS_PAUSED = "Paused until {until}"
+PAUSE_USAGE = "Usage: /pause 30m, /pause 3h, /pause until 18:00, or /pause off (up to 7 days)."
+PAUSED_UNTIL = "💤 Reminders paused until {until}. The digest still comes."
+PAUSE_OFF = "🔔 Reminders are back on."
+SYNC_OK = "✓ Synced: {count} items on your list"
+SYNC_NOT_MODIFIED = "✓ No changes since the last sync"
+SYNC_FAILED = {
+    "auth_failed": "✗ Canvas rejected the access token. Check /status for what to do.",
+    "unavailable": "✗ Couldn't reach Canvas right now. The bot keeps retrying.",
+    "protocol_error": "✗ Canvas sent an unexpected response. The bot keeps retrying.",
+}
