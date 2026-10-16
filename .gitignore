@@ -1,2 +1,22 @@
 # Playwright MCP snapshots and console logs
 .playwright-mcp/
+
+# Python / tooling
+.venv/
+__pycache__/
+.coverage
+htmlcov/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Local secrets and data (never commit)
+.env
+secrets/
+*.db
+*.db-wal
+*.db-shm
+
+# Spike raw output (scrub before committing anything)
+spike/out/
