@@ -49,4 +49,3 @@ def make_snapshot(items: tuple[Item, ...] | list[Item] = (), **overrides: Any) -
     }
     fields.update(overrides)
     return Snapshot(**fields)
-
