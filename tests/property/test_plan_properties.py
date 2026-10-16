@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from collections import Counter
 from dataclasses import dataclass, replace
-from itertools import pairwise
 from datetime import UTC, datetime, time, timedelta
+from itertools import pairwise
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
