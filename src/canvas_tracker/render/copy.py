@@ -55,3 +55,30 @@ AUTH_ALERT = (
     '2. Create a new token ("+ New Access Token"), with an expiry of 120 days or less.\n'
     "3. Put it in the bot's token file. The bot picks it up on its next check, no restart needed."
 )
+
+# Pairing and basic commands
+PAIRED = "✅ Paired! This bot will only talk to you now. Send /help to see what it can do."
+SEND_CODE = (
+    "Send /start followed by the pairing code from the bot's log, for example /start ABCD2345."
+)
+PAIR_WRONG = "That code isn't right. Check the bot's log and try again."
+PAIR_EXPIRED = "That code has expired. A new one is in the bot's log."
+PAIR_LOCKED = "Too many wrong codes. A new one is in the bot's log."
+WELCOME = (
+    "👋 Hi! Your digest arrives at {digest} ({tz}). When something is due within {window} h, "
+    "you get a reminder every {interval} until it's submitted. Quiet hours: {quiet}.\n"
+    "Send /help for commands."
+)
+QUIET_OFF = "off"
+HELP = "\n".join(
+    [
+        "Commands:",
+        "/today: what's due today, plus anything urgent or overdue",
+        "/week: the next 7 days by priority",
+        "/digest: send today's digest now",
+        "/sync: check Canvas right now",
+        "/status: last sync, token state, next digest and reminder",
+        "/pause 3h | 30m | until 18:00 | off: pause reminders",
+        "/help: this list",
+    ]
+)
