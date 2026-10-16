@@ -1,0 +1,86 @@
+[
+  {
+    "plannable_id": 11,
+    "plannable_type": "assignment",
+    "plannable_date": "2026-10-21T03:59:59Z",
+    "course_id": 1,
+    "context_type": "Course",
+    "context_name": "Course 1",
+    "html_url": "/courses/1/assignments/11",
+    "planner_override": null,
+    "new_activity": false,
+    "submissions": {
+      "submitted": false,
+      "excused": false,
+      "graded": false,
+      "late": false,
+      "missing": false,
+      "needs_grading": false,
+      "has_feedback": false,
+      "redo_request": false
+    },
+    "plannable": {"id": 11, "title": "Title 1", "points_possible": 10.0, "due_at": "2026-10-21T03:59:59Z"}
+  },
+  {
+    "plannable_id": 21,
+    "plannable_type": "quiz",
+    "plannable_date": "2026-10-20T18:00:00Z",
+    "course_id": 2,
+    "context_name": "Course 2",
+    "html_url": "/courses/2/quizzes/21",
+    "planner_override": null,
+    "submissions": false,
+    "plannable": {"id": 21, "title": "Title 2", "assignment_id": 210, "points_possible": 2.0}
+  },
+  {
+    "plannable_id": 31,
+    "plannable_type": "planner_note",
+    "planner_override": null,
+    "submissions": false,
+    "plannable": {"id": 31, "title": "Title 3"}
+  },
+  {
+    "plannable_id": 41,
+    "plannable_type": "assessment_request",
+    "plannable_date": "2026-10-22T03:59:00Z",
+    "course_id": 3,
+    "context_name": "Course 3",
+    "html_url": "/courses/3/assignments/40/submissions/1000",
+    "planner_override": null,
+    "submissions": false,
+    "plannable": {"id": 41, "title": "Title 4"}
+  },
+  {
+    "plannable_id": 51,
+    "plannable_type": "calendar_event",
+    "plannable_date": "2026-10-20T22:00:00Z",
+    "course_id": 1,
+    "context_name": "Course 1",
+    "html_url": "https://canvas.example.edu/calendar?event_id=51",
+    "planner_override": null,
+    "submissions": false,
+    "plannable": {"id": 51, "title": "Title 5"}
+  },
+  {
+    "plannable_id": 61,
+    "plannable_type": "discussion_topic",
+    "plannable_date": "2026-10-23T03:59:00Z",
+    "course_id": 2,
+    "context_name": "Course 2",
+    "html_url": "/courses/2/discussion_topics/61",
+    "planner_override": {"id": 900, "plannable_type": "discussion_topic", "plannable_id": 61, "marked_complete": true, "dismissed": false},
+    "submissions": {"submitted": false, "excused": false, "graded": false, "late": false, "missing": false, "redo_request": false},
+    "plannable": {"id": 61, "title": "Title 6", "assignment_id": 610, "points_possible": 5.0}
+  },
+  {
+    "plannable_id": 71,
+    "plannable_type": "assignment",
+    "plannable_date": "2026-10-24T23:59:00-04:00",
+    "course_id": 1,
+    "context_name": "Course 1",
+    "html_url": "/courses/1/assignments/71",
+    "planner_override": null,
+    "submissions": {"submitted": true, "excused": false, "graded": true, "late": true, "missing": false, "redo_request": false},
+    "plannable": {"id": 71, "title": "Title 7", "points_possible": 20.0}
+  }
+]
