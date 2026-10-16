@@ -25,7 +25,7 @@ TIER_REST = "🟡 MEDIUM / ⚪ LOW: {count} items, next: {next} → /week"
 SECTION_OVERDUE = "⚠️ OVERDUE"
 SECTION_EVENTS = "📅 Events today"
 DONE_YESTERDAY = "✅ Done yesterday: {count}"
-OVERDUE_LINE = "• {course} · {title}: was due {when}{accepted}"
+OVERDUE_LINE = "• {heading}: was due {when}{accepted}"
 OVERDUE_ACCEPTED = ", still accepted until {until}"
 
 # Item explanation fragments

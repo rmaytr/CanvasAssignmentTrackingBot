@@ -86,6 +86,7 @@ def test_effort_edges(hours: float, e: int) -> None:
         ("Reading response", ItemType.ASSIGNMENT, 1),
         ("Reply to peers", ItemType.DISCUSSION, 1),
         ("Problem set 4", ItemType.ASSIGNMENT, 2),
+        ("Peer review: Essay 2", ItemType.PEER_REVIEW, 1),
     ],
 )
 def test_effort_hours(title: str, item_type: ItemType, hours: float) -> None:

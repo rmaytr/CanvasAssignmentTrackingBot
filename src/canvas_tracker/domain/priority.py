@@ -94,6 +94,8 @@ def grade_share(item: Item, course: Course | None, group: AssignmentGroup | None
 def effort_hours(item: Item) -> float:
     """Default effort estimate in hours, from title keywords and item type."""
     title = item.title
+    if item.type is ItemType.PEER_REVIEW:
+        return 1  # reviewing someone's essay is not writing one
     if _EXAM_RE.search(title):
         return 8
     if _ESSAY_RE.search(title):
