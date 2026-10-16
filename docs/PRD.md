@@ -102,6 +102,7 @@ The target running cost is **$0/month**. It runs on a Raspberry Pi, an always-on
 | Data source, fallback (Mode B) | Canvas calendar (iCal) feed + manual Done | [Research] |
 | Session-cookie scraping (Mode C) | Not in v1. Maybe later as an off-by-default experimental mode. | [Research] |
 | Screenshots / OCR (Mode E) | Not in v1. Maybe a later "paste a screenshot" helper using local OCR only. | [Research] / [Design call] |
+| Writes to Canvas | **None in v1**: strictly read-only. An optional "sync Done to Canvas" setting comes in v1.x ([§7.6](#76-telegram-bot)). | [Design call] |
 | Primary channel | Telegram bot, long polling, HTML formatting, owner-only | [Research] |
 | Backup channel | Email over Gmail SMTP with an App Password: a digest copy and failure alerts | [Research] |
 | SMS | Out of scope, documented in the README | [Research] |
@@ -375,13 +376,26 @@ Wording rotates among a few templates, and the closest deadline goes first, beca
 
 | Button | Effect |
 |---|---|
-| ✅ Done | Sets `bot_done_at`, edits the message to show the item ticked, and adds a ↩️ Undo button for 10 minutes. If `SYNC_DONE_TO_CANVAS=true`, it also marks the item complete in the Canvas Planner (`POST /api/v1/planner/overrides` with `marked_complete: true`; the only write allowed). |
+| ✅ Done | Sets `bot_done_at`, edits the message to show the item ticked, and adds a ↩️ Undo button for 10 minutes. In v1 this is **local to the bot**; nothing is written to Canvas. |
 | 💤 2h | Snooze ([§7.5](#75-due-soon-reminders)). |
 | 🔗 Open | A URL button to the item's `html_url`. |
 | 🔕 Stop | Only on overdue notices: sets `stop_reminders`. |
 | ↩️ Undo | Reverses Done or Stop. |
 
 Every button press is answered within a few seconds, so the button doesn't keep spinning. A press on a stale button (an item already gone) answers "That item is no longer on your list."
+
+**Planned for v1.x: sync Done to Canvas (`SYNC_DONE_TO_CANVAS`, off by default).** Tapping Done would also check the item off in the Canvas Planner. This needs **two** write calls, both limited to the `marked_complete` field:
+
+- `POST /api/v1/planner/overrides` to create an override
+- `PUT /api/v1/planner/overrides/:id` to change one; an override may already exist, for example from a submission.
+
+To stay consistent, the bot records the override ID and the `due_at` it wrote the override for (`bot_override_id`, `bot_override_due_at`):
+
+- **Undo** sends `PUT marked_complete=false`.
+- **Extension:** if the due date changes on an item whose override the bot wrote, the bot sends `PUT marked_complete=false`, so Canvas and the bot both re-open it.
+- **Overrides the student set in Canvas** are never touched.
+
+This widens the write surface of a full-access token, so it stays out of v1, which makes no writes at all.
 
 **Commands** (v1):
 
@@ -447,7 +461,6 @@ Configuration comes from environment variables, loaded and validated by pydantic
 | `QUIET_HOURS` | `00:00-08:00` | `off` disables quiet hours |
 | `OVERDUE_REMINDERS` | `false` | See [§7.5](#75-due-soon-reminders) |
 | `OVERDUE_REMINDER_MAX_HOURS` | `48` | |
-| `SYNC_DONE_TO_CANVAS` | `false` | Allows the single planner-override write |
 | `HIDE_COURSES` | empty | Comma-separated course IDs or codes |
 | `EMAIL_ENABLED`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` / `_FILE`, `EMAIL_TO`, `EMAIL_DIGEST` | off | |
 | `HEALTHCHECK_PING_URL` / `_FILE` | none | healthchecks.io ping URL (secret) |
@@ -666,8 +679,9 @@ Keeping `plan()` pure and settings per call makes this possible later without a 
 ### 10.2 Required controls
 
 1. **Read-only toward Canvas by construction.**
-   - The Canvas client has no generic `request()` method. It exposes `get(path, params)` and one method, `mark_planner_item_complete(item)`, that works only when `SYNC_DONE_TO_CANVAS=true`.
-   - A test fails the build if any other HTTP method or path is reachable.
+   - In v1 the Canvas client has no generic `request()` method and exposes only `get(path, params)`.
+   - A test fails the build if any non-GET method is reachable.
+   - The v1.x "sync Done to Canvas" option would add exactly two methods, planner-override create and update, limited to `marked_complete`, and the test's allowlist would grow by exactly those two.
    - SECURITY.md states that submission, messaging and editing endpoints will never be implemented.
 2. **Host pinning:**
    - `CANVAS_BASE_URL` must be HTTPS with no user info or raw IP.
@@ -883,11 +897,25 @@ A checklist run against a real Canvas account and Telegram:
 
 | Milestone | Scope | Exit criteria |
 |---|---|---|
-| **M0: Spike (≈1 week)** | Throwaway scripts against the owner's real Canvas and Telegram to settle the open technical questions (S1–S8 in [§17](#17-open-questions)); record scrubbed fixtures | Written spike notes; fixtures committed; Mode A or B confirmed as the owner's primary mode |
-| **M1: Personal MVP** | Mode A (or B, depending on M0); done rule; priority; digest; reminder cycles with quiet hours, overdue and snooze; Telegram gate, pairing, buttons, `/today` `/week` `/sync` `/status` `/pause` `/digest`; SQLite; Docker; the core test suites in [§11.2](#112-required-test-suites) | Runs for the owner for **2 weeks**, including the **Nov 1, 2026** US clock change, with no duplicates, no false nags and every digest on time |
+| **M0: Spike (≈1 week)** | Small throwaway scripts that the **owner runs on their own machine** against their real Canvas and Telegram, to settle the open technical questions (S1–S8 in [§17](#17-open-questions)). Includes a scrubber that strips tokens and personal data from recorded responses before they are committed. | Written spike notes; scrubbed fixtures committed; Mode A or B confirmed as the owner's primary mode |
+| **M1: Personal MVP** | Mode A (or B, depending on M0); done rule; priority; digest; reminder cycles with quiet hours, overdue and snooze; Telegram gate, pairing, buttons, `/today` `/week` `/sync` `/status` `/pause` `/digest`; SQLite; Docker; the core test suites in [§11.2](#112-required-test-suites). The pure core (`domain/`, `planning/`, `render/`) doesn't depend on spike results, so it can start in parallel with M0. | Runs on the owner's host for **2 weeks** with no duplicates, no false nags and every digest on time. DST correctness is proven by the simulation suite. **There is no calendar deadline.** If a real clock change falls inside the run, it is watched as a bonus check; otherwise the next ones are US 2027-03-14 and EU 2027-03-28. |
 | **M2: Public v1.0** | The other mode (B or A); email backup; token-expiry warnings; circuit breaker and alerts; heartbeat; full security controls; CI/CD with image releases; all docs; the full test plan, including property tests, simulation and mutation testing | Every acceptance item in [§11.6](#116-manual-acceptance-before-each-release) passes; a fresh self-hoster gets a digest within 15 minutes; repository settings applied; tagged v1.0.0 |
-| **M3: v1.x** | `/mute`, `/settings`, effort-estimate button, a "when will you start?" prompt for HIGH items (commitment devices had strong evidence), a Sunday weekly overview, exam countdown, ntfy and Pushover notifiers, the submission lead-time log | Each feature behind settings, with tests |
+| **M3: v1.x** | `/mute`, `/settings`, effort-estimate button, a "when will you start?" prompt for HIGH items (commitment devices had strong evidence), a Sunday weekly overview, exam countdown, ntfy and Pushover notifiers, the submission lead-time log, "sync Done to Canvas" ([§7.6](#76-telegram-bot)) | Each feature behind settings, with tests |
 | **Later / maybe** | Session-cookie mode (experimental, off by default); a local-OCR screenshot helper; calendar export; translations; OAuth multi-user for schools that issue developer keys (a separate project) | Separate PRD addendum |
+
+### 15.1 Who does what
+
+**The owner is the only person who ever holds real credentials.** Whoever builds the code (the owner, Claude, or a contributor) works from fakes, recorded fixtures and test accounts, and **never receives the owner's Canvas token, calendar feed URL, Telegram bot token or passwords**. Instructure's policy forbids asking anyone for their token, and the token can submit work.
+
+| Task | Who |
+|---|---|
+| Write the code, tests, docs and CI | Builder |
+| Run spike scripts and the fixture scrubber against real Canvas and Telegram (M0) | Owner, on their own machine |
+| Create the Canvas token, Telegram bot, healthchecks.io check and (optionally) a separate Gmail sending account | Owner |
+| Deploy and run M1 on the owner's host; report anything odd | Owner |
+| Repository admin settings: rulesets, secret scanning, private vulnerability reporting, GHCR visibility, immutable releases | Owner (repo admin), from a checklist the builder writes |
+| Manual acceptance checklist ([§11.6](#116-manual-acceptance-before-each-release)), including a revoked test token | Owner |
+| 15-minute setup test with someone outside the project (NFR7) | Owner recruits a classmate |
 
 ## 16. Risks
 
