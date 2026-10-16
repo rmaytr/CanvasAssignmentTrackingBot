@@ -82,3 +82,13 @@ HELP = "\n".join(
         "/help: this list",
     ]
 )
+
+# Button answers
+DONE = "Marked done ✅"
+SNOOZED = "Snoozed until {until} 💤"
+SNOOZE_TOO_LATE = "It's due in under 30 minutes, so it can't be snoozed."
+UNDONE = "Undone ↩️"
+UNDO_EXPIRED = "Too late to undo. It reopens by itself if its due date changes."
+STOPPED = "No more reminders for this one 🔕"
+ITEM_GONE = "That item is no longer on your list."
+UNDO_BUTTON = "✔️ {n} done · ↩️ Undo"
