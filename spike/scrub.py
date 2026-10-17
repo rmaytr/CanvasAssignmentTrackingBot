@@ -18,7 +18,30 @@ from typing import Any
 
 TOKEN_RE = re.compile(r"\d{1,6}~[A-Za-z0-9]{20,}")
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-DROP_KEYS = frozenset({"description", "message", "body"})
+DROP_KEYS = frozenset(
+    {
+        "description",
+        "message",
+        "body",
+        "sis_user_id",
+        "sis_import_id",
+        "integration_id",
+        "login_id",
+        "lti_user_id",
+        "uuid",
+        "token_hint",
+        "primary_email",
+        "avatar_url",
+        "bio",
+        "pronouns",
+    }
+)
+# A dict with any of these keys describes a person, so its "id" is personal too.
+USER_MARKERS = frozenset(
+    {"login_id", "sortable_name", "primary_email", "sis_user_id", "short_name"}
+)
+FEED_RE = re.compile(r"https?://[^\s\"']*/feeds/[^\s\"']*")
+FIXTURE_PATTERNS = ("planner_items*.json", "assignment_groups_*.json")
 PLACEHOLDER_KEYS = {
     "title": "Title",
     "name": "Name",
@@ -52,6 +75,7 @@ class _Scrubber:
         return self._ids[value]
 
     def _text(self, value: str) -> str:
+        value = FEED_RE.sub(f"https://{FAKE_HOST}/feeds/REDACTED", value)  # feed URLs are secrets
         value = TOKEN_RE.sub("REDACTED_TOKEN", value)
         value = EMAIL_RE.sub("user@example.edu", value)
         return self._host_re.sub(FAKE_HOST, value)
@@ -59,6 +83,7 @@ class _Scrubber:
     def walk(self, obj: Any, in_user: bool = False) -> Any:
         if isinstance(obj, dict):
             out: dict[str, Any] = {}
+            in_user = in_user or bool(USER_MARKERS & obj.keys())
             for key, value in obj.items():
                 if key in DROP_KEYS:
                     continue
@@ -91,7 +116,11 @@ def main() -> None:
     args = parser.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     scrubber = _Scrubber(args.host)  # one scrubber so placeholders match across files
-    for src in sorted(args.in_dir.glob("*.json")):
+    sources = sorted(
+        {p for pattern in FIXTURE_PATTERNS for p in args.in_dir.glob(pattern)}
+        - set(args.in_dir.glob("*.meta.json"))
+    )  # only the responses tests need; profiles etc. stay in spike/out
+    for src in sources:
         data = json.loads(src.read_text(encoding="utf-8"))
         dest = args.out_dir / src.name
         dest.write_text(json.dumps(scrubber.walk(data), indent=2) + "\n", encoding="utf-8")

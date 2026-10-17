@@ -25,3 +25,6 @@ def test_fixture_is_scrubbed(path: Path) -> None:
     assert not TELEGRAM_RE.search(text), "Telegram token in fixture"
     assert set(EMAIL_RE.findall(text)) <= ALLOWED_EMAILS, "email address in fixture"
     assert set(HOST_RE.findall(text)) <= ALLOWED_HOSTS, "real host in fixture"
+    assert "/feeds/" not in text, "calendar feed URL (a secret) in fixture"
+    for key in ('"sis_user_id"', '"login_id"', '"lti_user_id"', '"primary_email"'):
+        assert key not in text, f"student identifier {key} in fixture"

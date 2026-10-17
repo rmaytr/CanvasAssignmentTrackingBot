@@ -9,7 +9,8 @@ bot's design questions (S1–S8 in `docs/PRD.md` §17) are settled with real dat
 - Raw output goes to `spike/out/`, which git ignores.
 - Before committing anything, scrub it:
   `uv run python spike/scrub.py --host canvas.yourschool.edu spike/out tests/fixtures/canvas`
-  and check the result by eye.
+  and check the result by eye. It only copies `planner_items*.json` and
+  `assignment_groups_*.json`; your profile and token list never leave `spike/out/`.
 - Record what you learned in `docs/spike-notes.md`.
 
 Scripts:
