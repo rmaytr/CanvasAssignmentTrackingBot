@@ -42,6 +42,8 @@ class FakeSync:
             if self.store.get_time(AUTH_FAILED_SINCE) is None:
                 self.store.set_time(AUTH_FAILED_SINCE, now)
             return self.outcome
+        if self.outcome is SyncOutcome.UNAVAILABLE:
+            return self.outcome
         self.store.upsert_items(self.items(now), now)
         self.store.set_time(LAST_SUCCESSFUL_SYNC_AT, now)
         self.store.set_time(AUTH_FAILED_SINCE, None)
@@ -187,3 +189,18 @@ async def test_enrichment_only_after_a_successful_sync() -> None:  # review I3
     fake_sync.outcome = SyncOutcome.UNAVAILABLE
     await runtime.tick()
     assert enriched == []
+
+
+async def test_nags_from_stale_data_carry_a_stale_note() -> None:  # review I4
+    runtime, store, fake_sync, notifier, _clock = build()
+    store.upsert_items([ITEM], NOW - timedelta(minutes=30))
+    store.set_time(LAST_SUCCESSFUL_SYNC_AT, NOW - timedelta(minutes=30))
+    fake_sync.outcome = SyncOutcome.UNAVAILABLE
+    await runtime.tick()
+    assert len(notifier.sent) == 1 and "⚠️ Based on Canvas data from" in notifier.sent[0].text
+
+
+async def test_fresh_nags_have_no_stale_note() -> None:
+    runtime, _store, _fake_sync, notifier, _clock = build()
+    await runtime.tick()
+    assert "Based on Canvas data" not in notifier.sent[0].text

@@ -8,7 +8,7 @@ from canvas_tracker.domain.models import Item, Send, SendKind, Settings, Snapsho
 from canvas_tracker.render import copy
 from canvas_tracker.render.digest import render_digest
 from canvas_tracker.render.format import TELEGRAM_LIMIT, format_due, format_left
-from canvas_tracker.render.items import heading, link_for, title_html
+from canvas_tracker.render.items import default_stale, heading, link_for, stale_note, title_html
 from canvas_tracker.render.message import Button, RenderedMessage
 
 MAX_ITEMS_PER_MESSAGE = 30  # 3 buttons each stays under Telegram's 100-button keyboard limit
@@ -91,21 +91,26 @@ def _overdue(item: Item, now: datetime, settings: Settings) -> RenderedMessage:
 
 
 def render_send(
-    send: Send, snap: Snapshot, now: datetime, settings: Settings
+    send: Send, snap: Snapshot, now: datetime, settings: Settings, stale: bool | None = None
 ) -> list[RenderedMessage]:
+    """Render one send. ``stale`` (default: computed from the last sync) adds a stale label."""
+    if stale is None:
+        stale = default_stale(snap, now)
     if send.kind is SendKind.DIGEST:
-        return render_digest(snap, now, settings)
+        return render_digest(snap, now, settings, stale=stale)
     if send.kind is SendKind.AUTH_ALERT:
         return [RenderedMessage(copy.AUTH_ALERT)]
     by_ref = {item.ref: item for item in snap.items}
     items = [by_ref[ref] for ref in send.item_refs if ref in by_ref and by_ref[ref].due_at]
     if not items:
         return []
+    note = f"\n{stale_note(snap, now, settings)}" if stale else ""
     if send.kind is SendKind.OVERDUE:
-        return [_overdue(items[0], now, settings)]
+        message = _overdue(items[0], now, settings)
+        return [RenderedMessage(message.text + note, message.keyboard)]
     if send.kind is SendKind.REMINDER:
         template = copy.REMINDER_HEADERS[_slot_number(send.key) % len(copy.REMINDER_HEADERS)]
         header = template.format(count=len(items))
     else:
         header = _HEADERS[send.kind]
-    return _list_messages(header, items, snap, now, settings)
+    return _list_messages(header + note, items, snap, now, settings)

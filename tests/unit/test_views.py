@@ -78,3 +78,11 @@ def test_status_text() -> None:
     text = render_status(failed, NOW, S).text
     assert "Token: failed since today 11:00 AM" in text and "Last sync: never" in text
     assert "Paused until today 2:00 PM" in text
+
+
+def test_views_label_stale_data_and_never_say_nothing_due() -> None:  # review I4
+    stale = make_snapshot(last_successful_sync_at=NOW - timedelta(minutes=31))
+    for render in (render_today, render_week):
+        [msg] = render(stale, NOW, S)
+        assert "Couldn't reach Canvas since 11:29 AM" in msg.text
+        assert "Nothing due" not in msg.text

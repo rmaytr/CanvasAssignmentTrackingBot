@@ -113,6 +113,13 @@ class Runtime:
             snap = self.store.snapshot(self.hidden_courses)
             result = plan(now, snap, self.settings)
 
+        last_ok = self.store.get_time(LAST_SUCCESSFUL_SYNC_AT)
+        stale = (
+            last_ok is None
+            or now - last_ok > FRESHNESS
+            or self.store.get_time(AUTH_FAILED_SINCE) is not None
+        )
+
         if result.open_cycle_at is not None:
             self.store.open_cycle(result.open_cycle_at)
         if result.close_cycle:
@@ -122,7 +129,7 @@ class Runtime:
             for send in result.sends:
                 if not self.store.claim(send.key, send.kind, send.item_refs, now):
                     continue
-                messages = render_send(send, snap, now, self.settings)
+                messages = render_send(send, snap, now, self.settings, stale=stale)
                 try:
                     first_id: int | None = None
                     for message in messages:

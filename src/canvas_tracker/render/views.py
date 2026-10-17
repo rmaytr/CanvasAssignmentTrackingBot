@@ -15,7 +15,7 @@ from canvas_tracker.planning.timeutil import at_local, local_date
 from canvas_tracker.render import copy
 from canvas_tracker.render.digest import BUTTONS_PER_ROW, MAX_DIGEST_BUTTONS, explain, item_score
 from canvas_tracker.render.format import format_due, split_blocks
-from canvas_tracker.render.items import heading
+from canvas_tracker.render.items import default_stale, heading, stale_banner
 from canvas_tracker.render.message import Button, RenderedMessage
 
 PAUSE_MAX = timedelta(days=7)
@@ -71,7 +71,8 @@ def _list_view(
     now: datetime,
     settings: Settings,
 ) -> list[RenderedMessage]:
-    blocks = [title]
+    stale = default_stale(snap, now)
+    blocks = [title, stale_banner(snap, settings)] if stale else [title]
     numbered: list[Item] = []
     for heading_text, entries in groups:
         if not entries:
@@ -83,7 +84,7 @@ def _list_view(
             numbered.append(item)
             why = explain(item, s, now, settings)
             blocks.append(f"{len(numbered)}. {heading(item, snap, settings.canvas_host)}\n   {why}")
-    if not numbered:
+    if not numbered and not stale:  # never claim "nothing due" from stale data
         blocks += ["", empty]
     buttons = [
         Button(f"✅ {n}", callback_data=f"d:{item.db_id}")

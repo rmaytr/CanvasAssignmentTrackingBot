@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from canvas_tracker.domain.done_rule import is_done
-from canvas_tracker.domain.models import STALE_AFTER, Item, ItemType, Settings, Snapshot
+from canvas_tracker.domain.models import Item, ItemType, Settings, Snapshot
 from canvas_tracker.domain.priority import Score, Tier, score
 from canvas_tracker.domain.status import REMINDABLE_TYPES, is_overdue_accepting
 from canvas_tracker.render import copy
 from canvas_tracker.render.format import clock, format_due, split_blocks
-from canvas_tracker.render.items import heading, plain_heading
+from canvas_tracker.render.items import default_stale, heading, plain_heading, stale_banner
 from canvas_tracker.render.message import Button, RenderedMessage
 
 MAX_DIGEST_BUTTONS = 96
@@ -83,7 +83,9 @@ def _sort_key(entry: tuple[Item, Score], snap: Snapshot) -> tuple[datetime, int,
     return (item.due_at, -s.total, course.code if course else item.course_name)
 
 
-def render_digest(snap: Snapshot, now: datetime, settings: Settings) -> list[RenderedMessage]:
+def render_digest(
+    snap: Snapshot, now: datetime, settings: Settings, stale: bool | None = None
+) -> list[RenderedMessage]:
     tz = settings.zone
     host = settings.canvas_host
     today = now.astimezone(tz).date()
@@ -122,7 +124,7 @@ def render_digest(snap: Snapshot, now: datetime, settings: Settings) -> list[Ren
     )
 
     last = snap.last_successful_sync_at
-    fresh = last is not None and now - last <= STALE_AFTER
+    fresh = not (default_stale(snap, now) if stale is None else stale)
     synced = clock(last, tz) if last is not None else "never"
     week = sum(1 for i, _s in rest if i.due_at is not None and i.due_at <= now + timedelta(days=7))
     blocks = [copy.DIGEST_HEADER.format(date=f"{today:%a}, {today:%b} {today.day}")]
@@ -130,9 +132,7 @@ def render_digest(snap: Snapshot, now: datetime, settings: Settings) -> list[Ren
         copy.DIGEST_COUNTS.format(urgent=len(urgent), high=len(high), later=week, synced=synced)
     )
     if not fresh:
-        blocks.append(
-            copy.STALE_BANNER.format(since=synced) if last is not None else copy.STALE_NEVER
-        )
+        blocks.append(stale_banner(snap, settings))
 
     numbered: list[Item] = []
     for title, entries in ((copy.TIER_URGENT, urgent), (copy.TIER_HIGH, high)):

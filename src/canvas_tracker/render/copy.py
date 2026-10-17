@@ -124,3 +124,7 @@ SYNC_FAILED = {
     "unavailable": "✗ Couldn't reach Canvas right now. The bot keeps retrying.",
     "protocol_error": "✗ Canvas sent an unexpected response. The bot keeps retrying.",
 }
+
+# Stale data (PRD anti-goal: never present stale data as current)
+STALE_NOTE = "⚠️ Based on Canvas data from {since}. If you've already submitted, ignore this."
+STALE_NOTE_NEVER = "⚠️ Haven't reached Canvas yet, so this may be out of date."

@@ -22,7 +22,7 @@ def test_reminder_lists_items_nearest_first_with_buttons() -> None:
     )
     quiz = make_item(db_id=2, course_id=2, title="Quiz 7", due_at=ny(20, 16, 0))
     send = Send("rem:2026-10-20T03:59Z:5", SendKind.REMINDER, (quiz.ref, hw.ref))
-    [msg] = render_send(send, make_snapshot([hw, quiz], courses=COURSES), NOW, S)
+    [msg] = render_send(send, make_snapshot([hw, quiz], courses=COURSES), NOW, S, stale=False)
     assert msg.text == "\n".join(
         [
             "⏰ Reminder: 2 due within 24 hours",
@@ -76,7 +76,7 @@ def test_forty_urgent_items_split_into_two_messages() -> None:  # Review Focus 3
 def test_overdue_notice_mentions_lock_only_when_in_future() -> None:
     open_item = make_item(db_id=7, title="Lab 2", due_at=ny(20, 14, 0), lock_at=ny(23, 23, 59))
     send = Send(f"overdue:{open_item.ref}:x", SendKind.OVERDUE, (open_item.ref,))
-    [msg] = render_send(send, make_snapshot([open_item]), NOW, S)
+    [msg] = render_send(send, make_snapshot([open_item]), NOW, S, stale=False)
     assert msg.text == (
         "❗ Lab 2 is now overdue (was due today 2:00 PM).\n"
         "Canvas still accepts it until Fri 11:59 PM."
@@ -129,3 +129,30 @@ def test_missing_refs_are_skipped() -> None:
     send = Send("rem:2026-10-20T03:59Z:0", SendKind.REMINDER, (item.ref, "assignment-999999"))
     [msg] = render_send(send, make_snapshot([item]), NOW, S)
     assert "1 not submitted" in msg.text
+
+
+def test_stale_data_is_labelled_on_every_nag() -> None:  # review I4
+    item = make_item(db_id=1, title="Lab", due_at=ny(20, 23, 59))
+    snap = make_snapshot([item], last_successful_sync_at=ny(20, 13, 0))
+    note = "⚠️ Based on Canvas data from today 1:00 PM. If you've already submitted, ignore this."
+    for kind in (SendKind.REMINDER, SendKind.NEW_URGENT, SendKind.SNOOZE_END, SendKind.OVERNIGHT):
+        send = Send("rem:2026-10-20T03:59Z:0", kind, (item.ref,))
+        assert note in render_send(send, snap, NOW, S, stale=True)[0].text
+        assert note not in render_send(send, snap, NOW, S, stale=False)[0].text
+    overdue = make_item(db_id=2, title="Quiz", due_at=ny(20, 14, 0))
+    msg = render_send(
+        Send("overdue:x", SendKind.OVERDUE, (overdue.ref,)),
+        make_snapshot([overdue], last_successful_sync_at=ny(20, 13, 0)),
+        NOW,
+        S,
+        stale=True,
+    )[0]
+    assert note in msg.text
+
+
+def test_digest_honours_an_explicit_stale_flag() -> None:  # review I4 / Minor 13
+    snap = make_snapshot(last_successful_sync_at=DIGEST_NOW - timedelta(minutes=10))
+    text = render_send(Send("digest:2026-10-20", SendKind.DIGEST), snap, DIGEST_NOW, S, stale=True)[
+        0
+    ].text
+    assert "Couldn't reach Canvas since 7:50 AM" in text and "Nothing due" not in text
