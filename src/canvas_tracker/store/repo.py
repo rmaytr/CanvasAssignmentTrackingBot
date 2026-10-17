@@ -300,6 +300,9 @@ class Store:
                     for d in enrichment.details.values()
                 ],
             )
+            # Items whose assignment isn't in any active course (e.g. last term's work)
+            # count as attempted, so they don't retrigger enrichment on every sync.
+            self.conn.execute("UPDATE items SET enriched = 1 WHERE assignment_id IS NOT NULL")
 
     def needs_enrichment(self) -> bool:
         row = self.conn.execute(

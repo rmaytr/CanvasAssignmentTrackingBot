@@ -7,6 +7,7 @@ avoids cross-thread connection problems.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -34,6 +35,8 @@ log = logging.getLogger(__name__)
 SYNC_INTERVAL_AWAKE = timedelta(minutes=10)
 SYNC_INTERVAL_QUIET = timedelta(minutes=30)
 ENRICH_INTERVAL = timedelta(hours=12)
+SYNC_TIMEOUT_S = 60.0  # bounds a hanging Canvas, so the tick and /sync stay responsive
+ENRICH_TIMEOUT_S = 120.0
 
 
 class SyncOutcome(StrEnum):
@@ -61,10 +64,18 @@ def enrichment_due(
 
 
 class SyncService:
-    def __init__(self, client: CanvasClient, store: Store, base_url: str) -> None:
+    def __init__(
+        self,
+        client: CanvasClient,
+        store: Store,
+        base_url: str,
+        timeout_s: float | None = None,
+    ) -> None:
         self.client = client
         self.store = store
         self.base_url = base_url
+        self.sync_timeout_s = SYNC_TIMEOUT_S if timeout_s is None else timeout_s
+        self.enrich_timeout_s = ENRICH_TIMEOUT_S if timeout_s is None else timeout_s
 
     def _failed(self, now: datetime, exc: CanvasError) -> SyncOutcome:
         self.store.set_state(LAST_SYNC_ERROR, type(exc).__name__)
@@ -87,9 +98,12 @@ class SyncService:
     async def sync(self, now: datetime) -> SyncOutcome:
         self.store.set_time(LAST_SYNC_ATTEMPT_AT, now)
         try:
-            fetch = await fetch_planner(
-                self.client, now, self.store.get_state(PLANNER_ETAG), self.base_url
-            )
+            async with asyncio.timeout(self.sync_timeout_s):
+                fetch = await fetch_planner(
+                    self.client, now, self.store.get_state(PLANNER_ETAG), self.base_url
+                )
+        except TimeoutError:
+            return self._failed(now, CanvasUnavailable("Canvas timed out"))
         except CanvasError as exc:
             return self._failed(now, exc)
         except Exception as exc:  # anything else must not take the tick down with it
@@ -109,7 +123,11 @@ class SyncService:
 
     async def enrich(self, now: datetime) -> SyncOutcome:
         try:
-            enrichment = await fetch_enrichment(self.client)
+            async with asyncio.timeout(self.enrich_timeout_s):
+                enrichment = await fetch_enrichment(self.client)
+        except TimeoutError:
+            log.warning("enrichment timed out")
+            return SyncOutcome.UNAVAILABLE
         except CanvasError as exc:
             # Enrichment is best effort: its errors never set the auth or sync-error state,
             # which belong to the planner sync (a 401 here can just mean "not allowed").

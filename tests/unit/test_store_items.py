@@ -189,3 +189,10 @@ def test_purge_removes_old_items_and_notifications(store: Store) -> None:
     store.purge(NOW, item_retention=timedelta(days=30))
     assert [i.ref for i in store.snapshot().items] == [recent.ref]
     assert store.snapshot().sent_keys == {"new"}
+
+
+def test_enrichment_marks_unmatched_items_as_attempted(store: Store) -> None:  # review I3
+    store.upsert_items([make_item(plannable_id=5, assignment_id=999)], NOW)
+    assert store.needs_enrichment()
+    store.apply_enrichment(Enrichment(courses=(), groups=(), details={}))
+    assert store.needs_enrichment() is False

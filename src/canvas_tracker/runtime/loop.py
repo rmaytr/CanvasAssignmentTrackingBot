@@ -88,10 +88,13 @@ class Runtime:
             return
         if outcome is SyncOutcome.AUTH_FAILED:
             self._failed_token_digest = self._token_digest()
-        elif enrichment_due(
+        elif outcome in (SyncOutcome.OK, SyncOutcome.NOT_MODIFIED) and enrichment_due(
             now, self.store.get_time(LAST_ENRICHMENT_AT), self.store.needs_enrichment()
         ):
-            await self.sync.enrich(now)
+            try:
+                await self.sync.enrich(now)
+            except Exception:
+                log.exception("enrichment crashed")
 
     async def tick(self) -> None:
         now = self.clock()

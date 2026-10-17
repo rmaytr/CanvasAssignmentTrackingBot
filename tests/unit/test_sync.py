@@ -2,6 +2,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 
+import httpx
 import pytest
 import respx
 
@@ -191,3 +192,22 @@ async def test_planner_401_without_challenge_is_still_auth_failure(store: Store)
     respx.get(f"{BASE}{PLANNER_PATH}").respond(401)
     assert await service(store).sync(NOW) is SyncOutcome.AUTH_FAILED
     assert store.get_time(AUTH_FAILED_SINCE) == NOW
+
+
+@respx.mock
+async def test_hanging_canvas_is_cut_off_by_the_sync_timeout(store: Store) -> None:  # review I3
+    import asyncio
+
+    async def hang(_request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(5)
+        raise AssertionError("unreachable")
+
+    respx.get(f"{BASE}{PLANNER_PATH}").mock(side_effect=hang)
+    respx.get(f"{BASE}/api/v1/courses").mock(side_effect=hang)
+    from unittest.mock import AsyncMock
+
+    svc = SyncService(
+        CanvasClient(BASE, lambda: "t", sleep=AsyncMock()), store, BASE, timeout_s=0.05
+    )
+    assert await svc.sync(NOW) is SyncOutcome.UNAVAILABLE
+    assert await svc.enrich(NOW) is SyncOutcome.UNAVAILABLE

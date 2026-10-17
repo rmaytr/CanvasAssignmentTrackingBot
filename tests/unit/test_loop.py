@@ -173,3 +173,17 @@ async def test_a_crashing_sync_never_blocks_sending() -> None:  # review I1
     await runtime.tick()
     assert len(notifier.sent) == 1
     assert store.get_time(LAST_TICK_AT) == NOW
+
+
+async def test_enrichment_only_after_a_successful_sync() -> None:  # review I3
+    runtime, _store, fake_sync, _notifier, _clock = build()
+    enriched: list[datetime] = []
+
+    async def enrich(now: datetime) -> SyncOutcome:
+        enriched.append(now)
+        return SyncOutcome.OK
+
+    fake_sync.enrich = enrich  # type: ignore[method-assign]
+    fake_sync.outcome = SyncOutcome.UNAVAILABLE
+    await runtime.tick()
+    assert enriched == []
