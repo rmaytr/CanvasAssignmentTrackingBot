@@ -138,3 +138,19 @@ async def test_enrich_applies_details(store: Store) -> None:
     assert store.get_time(LAST_ENRICHMENT_AT) == NOW
     item = next(i for i in store.snapshot().items if i.ref == "assignment-11")
     assert item.lock_at is not None and item.assignment_group_id == 9
+
+
+async def test_unexpected_errors_become_protocol_errors(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:  # review I1
+    import canvas_tracker.runtime.sync as sync_module
+
+    async def boom(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("surprise")
+
+    monkeypatch.setattr(sync_module, "fetch_planner", boom)
+    monkeypatch.setattr(sync_module, "fetch_enrichment", boom)
+    svc = service(store)
+    assert await svc.sync(NOW) is SyncOutcome.PROTOCOL_ERROR
+    assert store.get_state(LAST_SYNC_ERROR) == "RuntimeError"
+    assert await svc.enrich(NOW) is SyncOutcome.PROTOCOL_ERROR

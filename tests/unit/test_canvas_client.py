@@ -166,3 +166,20 @@ async def test_requests_never_overlap() -> None:
     client = make_client()
     await asyncio.gather(client.get_json("/api/v1/x"), client.get_json("/api/v1/x"))
     assert peak == 1
+
+
+@respx.mock
+async def test_non_json_200_is_a_protocol_error() -> None:  # review I1
+    respx.get(f"{BASE}/api/v1/x").respond(200, text="<html>Wi-Fi login</html>")
+    with pytest.raises(CanvasProtocolError):
+        await make_client().get_json("/api/v1/x")
+    with pytest.raises(CanvasProtocolError):
+        await make_client().get_all("/api/v1/x")
+
+
+async def test_unreadable_token_file_is_an_auth_error() -> None:
+    def broken() -> str:
+        raise FileNotFoundError("/run/secrets/canvas_token")
+
+    with pytest.raises(CanvasAuthError):
+        await make_client(token=broken).get_json("/api/v1/x")

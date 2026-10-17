@@ -159,3 +159,17 @@ async def test_run_forever_survives_a_failing_tick(monkeypatch: pytest.MonkeyPat
     with pytest.raises(asyncio.CancelledError):
         await task
     assert calls >= 3
+
+
+async def test_a_crashing_sync_never_blocks_sending() -> None:  # review I1
+    runtime, store, fake_sync, notifier, _clock = build()
+
+    async def crash(now: datetime) -> SyncOutcome:
+        raise RuntimeError("boom")
+
+    fake_sync.sync = crash  # type: ignore[method-assign]
+    store.upsert_items([ITEM], NOW - timedelta(minutes=30))
+    store.set_time(LAST_SUCCESSFUL_SYNC_AT, NOW - timedelta(minutes=30))
+    await runtime.tick()
+    assert len(notifier.sent) == 1
+    assert store.get_time(LAST_TICK_AT) == NOW

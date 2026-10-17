@@ -75,8 +75,7 @@ class CanvasClient:
         )
 
     async def get_json(self, path: str, params: Params | None = None) -> Any:
-        response = await self._get(self._url(path), params)
-        return response.json()
+        return self._json(await self._get(self._url(path), params))
 
     async def get_all(self, path: str, params: Params | None = None) -> list[Any]:
         items, _pages = await self._collect(await self._get(self._url(path), params))
@@ -99,6 +98,13 @@ class CanvasClient:
 
     # --- internals -------------------------------------------------------------
 
+    @staticmethod
+    def _json(response: httpx.Response) -> Any:
+        try:
+            return response.json()
+        except ValueError:  # e.g. a captive portal or maintenance page
+            raise CanvasProtocolError("Canvas sent a response that isn't JSON") from None
+
     def _url(self, path: str) -> str:
         if not path.startswith(API_PREFIX):
             raise ValueError(f"only {API_PREFIX} paths may be requested")
@@ -109,7 +115,7 @@ class CanvasClient:
         pages = 0
         while True:
             pages += 1
-            page = response.json()
+            page = self._json(response)
             if not isinstance(page, list):
                 raise CanvasProtocolError("expected a JSON list from a paginated endpoint")
             items.extend(page)
@@ -137,8 +143,12 @@ class CanvasClient:
     ) -> httpx.Response:
         for attempt in range(self._max_retries + 1):
             last_try = attempt == self._max_retries
+            try:
+                token = self._token()
+            except OSError:
+                raise CanvasAuthError("could not read the Canvas access token") from None
             request_headers = {
-                "Authorization": f"Bearer {self._token()}",
+                "Authorization": f"Bearer {token}",
                 "User-Agent": USER_AGENT,
                 "Accept": "application/json",
                 **(headers or {}),

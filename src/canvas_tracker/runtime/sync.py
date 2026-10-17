@@ -15,7 +15,6 @@ from canvas_tracker.sources.canvas_client import (
     CanvasAuthError,
     CanvasClient,
     CanvasError,
-    CanvasProtocolError,
     CanvasUnavailable,
 )
 from canvas_tracker.sources.enrichment import fetch_enrichment
@@ -91,8 +90,12 @@ class SyncService:
             fetch = await fetch_planner(
                 self.client, now, self.store.get_state(PLANNER_ETAG), self.base_url
             )
-        except (CanvasAuthError, CanvasUnavailable, CanvasProtocolError) as exc:
+        except CanvasError as exc:
             return self._failed(now, exc)
+        except Exception as exc:  # anything else must not take the tick down with it
+            self.store.set_state(LAST_SYNC_ERROR, type(exc).__name__)
+            log.exception("planner sync failed")
+            return SyncOutcome.PROTOCOL_ERROR
         if fetch.items is None:
             self._succeeded(now)
             return SyncOutcome.NOT_MODIFIED
@@ -107,8 +110,11 @@ class SyncService:
     async def enrich(self, now: datetime) -> SyncOutcome:
         try:
             enrichment = await fetch_enrichment(self.client)
-        except (CanvasAuthError, CanvasUnavailable, CanvasProtocolError) as exc:
+        except CanvasError as exc:
             return self._failed(now, exc)
+        except Exception:
+            log.exception("enrichment failed")
+            return SyncOutcome.PROTOCOL_ERROR
         self.store.apply_enrichment(enrichment)
         self.store.set_time(LAST_ENRICHMENT_AT, now)
         return SyncOutcome.OK

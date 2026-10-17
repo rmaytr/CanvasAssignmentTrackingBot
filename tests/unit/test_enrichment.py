@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 import respx
@@ -22,6 +23,7 @@ def test_map_course() -> None:
         "apply_assignment_group_weights": True,
     }
     course = map_course(raw)
+    assert course is not None
     assert (course.id, course.code, course.name, course.apply_group_weights) == (
         1,
         "CS 101",
@@ -77,3 +79,24 @@ def test_bad_group_weight_is_zero(weight: object) -> None:
         1, [{"id": 2, "name": "G", "group_weight": weight, "assignments": []}]
     )
     assert groups[0].group_weight == 0.0
+
+
+def test_malformed_entries_are_skipped() -> None:  # review I1
+    raw: list[dict[str, Any]] = [
+        {"name": "no id", "assignments": []},
+        {
+            "id": 3,
+            "name": "G",
+            "group_weight": 10,
+            "assignments": [{"id": "x"}, {"points_possible": 5}, {"id": 8, "points_possible": 4}],
+        },
+    ]
+    groups, details, total = map_assignment_groups(1, raw)
+    assert [g.id for g in groups] == [3] and set(details) == {8} and total == 4.0
+
+
+@respx.mock
+async def test_courses_without_ids_are_skipped() -> None:
+    respx.get(f"{BASE}/api/v1/courses").respond(200, json=[{"name": "broken"}, {"id": "nope"}])
+    result = await fetch_enrichment(CanvasClient(BASE, lambda: "t"))
+    assert result.courses == ()

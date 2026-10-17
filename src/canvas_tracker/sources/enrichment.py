@@ -16,9 +16,16 @@ def _float(value: object, default: float = 0.0) -> float:
     return float(value)
 
 
-def map_course(raw: Mapping[str, Any]) -> Course:
+def _id(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def map_course(raw: Mapping[str, Any]) -> Course | None:
+    course_id = _id(raw.get("id"))
+    if course_id is None:
+        return None
     return Course(
-        id=int(raw["id"]),
+        id=course_id,
         code=str(raw.get("course_code") or ""),
         name=str(raw.get("name") or ""),
         apply_group_weights=raw.get("apply_assignment_group_weights") is True,
@@ -42,10 +49,14 @@ def map_assignment_groups(
     details: dict[int, AssignmentDetail] = {}
     course_total = 0.0
     for raw in raw_groups:
-        assignments = [a for a in raw.get("assignments") or [] if isinstance(a, Mapping)]
+        group_id = _id(raw.get("id"))
+        if group_id is None:
+            continue  # one malformed entry must not break enrichment
+        assignments = [
+            a for a in raw.get("assignments") or [] if isinstance(a, Mapping) and _id(a.get("id"))
+        ]
         total = sum(_counts(a) for a in assignments)
         course_total += total
-        group_id = int(raw["id"])
         groups.append(
             AssignmentGroup(
                 id=group_id,
@@ -57,8 +68,9 @@ def map_assignment_groups(
         )
         for a in assignments:
             points = a.get("points_possible")
-            details[int(a["id"])] = AssignmentDetail(
-                assignment_id=int(a["id"]),
+            assignment_id = int(a["id"])
+            details[assignment_id] = AssignmentDetail(
+                assignment_id=assignment_id,
                 points_possible=None if points is None else _float(points),
                 submission_types=tuple(str(t) for t in a.get("submission_types") or ()),
                 assignment_group_id=group_id,
@@ -76,9 +88,9 @@ async def fetch_enrichment(client: CanvasClient) -> Enrichment:
     groups: list[AssignmentGroup] = []
     details: dict[int, AssignmentDetail] = {}
     for raw in raw_courses:
-        if not isinstance(raw, Mapping) or "id" not in raw:
+        course = map_course(raw) if isinstance(raw, Mapping) else None
+        if course is None:
             continue
-        course = map_course(raw)
         raw_groups = await client.get_all(
             f"/api/v1/courses/{course.id}/assignment_groups",
             {"include[]": ["assignments"], "per_page": "100"},

@@ -81,7 +81,11 @@ class Runtime:
         return last_attempt is None or now - last_attempt >= AUTH_RECHECK
 
     async def _sync(self, now: datetime) -> None:
-        outcome = await self.sync.sync(now)
+        try:
+            outcome = await self.sync.sync(now)
+        except Exception:  # planning and sending must go on with the data we have
+            log.exception("sync crashed")
+            return
         if outcome is SyncOutcome.AUTH_FAILED:
             self._failed_token_digest = self._token_digest()
         elif enrichment_due(
