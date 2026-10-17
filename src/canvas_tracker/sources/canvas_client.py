@@ -48,6 +48,7 @@ class EtagResult:
     not_modified: bool
     data: list[Any]
     etag: str | None
+    pages: int = 1  # an ETag only describes the first page, so it is only safe when this is 1
 
 
 class CanvasClient:
@@ -78,7 +79,8 @@ class CanvasClient:
         return response.json()
 
     async def get_all(self, path: str, params: Params | None = None) -> list[Any]:
-        return await self._collect(await self._get(self._url(path), params))
+        items, _pages = await self._collect(await self._get(self._url(path), params))
+        return items
 
     async def get_all_if_changed(
         self, path: str, params: Params | None, etag: str | None
@@ -87,8 +89,9 @@ class CanvasClient:
         first = await self._get(self._url(path), params, headers)
         if first.status_code == 304:
             return EtagResult(not_modified=True, data=[], etag=etag)
+        items, pages = await self._collect(first)
         return EtagResult(
-            not_modified=False, data=await self._collect(first), etag=first.headers.get("ETag")
+            not_modified=False, data=items, etag=first.headers.get("ETag"), pages=pages
         )
 
     async def aclose(self) -> None:
@@ -101,16 +104,18 @@ class CanvasClient:
             raise ValueError(f"only {API_PREFIX} paths may be requested")
         return f"{self._base}{path}"
 
-    async def _collect(self, response: httpx.Response) -> list[Any]:
+    async def _collect(self, response: httpx.Response) -> tuple[list[Any], int]:
         items: list[Any] = []
+        pages = 0
         while True:
+            pages += 1
             page = response.json()
             if not isinstance(page, list):
                 raise CanvasProtocolError("expected a JSON list from a paginated endpoint")
             items.extend(page)
             next_url = response.links.get("next", {}).get("url")
             if not next_url:
-                return items
+                return items, pages
             parts = urlsplit(next_url)
             if (parts.scheme, parts.netloc) != self._origin or not parts.path.startswith(
                 API_PREFIX

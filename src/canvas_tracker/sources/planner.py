@@ -115,6 +115,7 @@ class PlannerFetch:
     items: tuple[Item, ...] | None  # None: unchanged since the stored ETag (HTTP 304)
     etag: str | None
     window: tuple[datetime, datetime]
+    pages: int = 1
 
 
 async def fetch_planner(
@@ -131,4 +132,4 @@ async def fetch_planner(
         )
         if item is not None
     )
-    return PlannerFetch(items=items, etag=result.etag, window=window)
+    return PlannerFetch(items=items, etag=result.etag, window=window, pages=result.pages)

@@ -98,7 +98,8 @@ class SyncService:
             return SyncOutcome.NOT_MODIFIED
         self.store.upsert_items(fetch.items, now)
         self.store.mark_gone(fetch.window, {item.ref for item in fetch.items}, now)
-        self.store.set_state(PLANNER_ETAG, fetch.etag)
+        # A 304 on page 1 says nothing about later pages, so only keep a single-page ETag.
+        self.store.set_state(PLANNER_ETAG, fetch.etag if fetch.pages == 1 else None)
         self._succeeded(now)
         log.info("synced planner", extra={"items": len(fetch.items)})
         return SyncOutcome.OK

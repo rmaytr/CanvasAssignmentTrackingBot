@@ -103,3 +103,46 @@ async def test_fetch_planner_maps_items_and_skips_undated() -> None:
     result = await fetch_planner(client, NOW, None, BASE)
     assert result.items is not None and len(result.items) == 6 and result.etag == 'W/"y"'
     assert result.window == planner_window(NOW)
+
+
+@respx.mock
+async def test_multi_page_planner_never_uses_etag(tmp_path: Path) -> None:  # review C1
+    from unittest.mock import AsyncMock
+
+    from canvas_tracker.runtime.sync import SyncService
+    from tests.store_helpers import new_store
+
+    route = respx.get(f"{BASE}{PLANNER_PATH}")
+    route.side_effect = [
+        httpx.Response(
+            200,
+            json=RAW[:3],
+            headers={"ETag": 'W/"p1"', "Link": f'<{BASE}{PLANNER_PATH}?page=2>; rel="next"'},
+        ),
+        httpx.Response(200, json=RAW[3:], headers={"ETag": 'W/"p2"'}),
+        httpx.Response(200, json=RAW),
+    ]
+    store = new_store()
+    svc = SyncService(CanvasClient(BASE, lambda: "t", sleep=AsyncMock()), store, BASE)
+    await svc.sync(NOW)
+    await svc.sync(NOW)
+    third = route.calls[2].request
+    assert "If-None-Match" not in third.headers
+
+
+@respx.mock
+async def test_single_page_planner_uses_etag() -> None:
+    from unittest.mock import AsyncMock
+
+    from canvas_tracker.runtime.sync import SyncService
+    from tests.store_helpers import new_store
+
+    route = respx.get(f"{BASE}{PLANNER_PATH}")
+    route.side_effect = [
+        httpx.Response(200, json=RAW, headers={"ETag": 'W/"one"'}),
+        httpx.Response(304),
+    ]
+    svc = SyncService(CanvasClient(BASE, lambda: "t", sleep=AsyncMock()), new_store(), BASE)
+    await svc.sync(NOW)
+    await svc.sync(NOW)
+    assert route.calls[1].request.headers["If-None-Match"] == 'W/"one"'

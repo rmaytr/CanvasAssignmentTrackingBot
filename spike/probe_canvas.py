@@ -70,6 +70,8 @@ def main() -> None:
             "per_page": "100",
         }
         r, planner = get("planner_items", "/api/v1/planner/items", **planner_params)
+        pages = "several pages" if 'rel="next"' in (r.headers.get("link") or "") else "one page"
+        print(f"{'planner_items size':<24} {len(planner or [])} items on page 1 ({pages})")
         etag = r.headers.get("etag")
         if etag:
             r2 = c.get(
@@ -100,7 +102,8 @@ def main() -> None:
     print("  S5 assignment group JSON: out/assignment_groups_*.json (look for 'group_weight')")
     overrides = sum(1 for i in planner or [] if i.get("planner_override"))
     print(f"  S6 planner items with an override: {overrides} of {len(planner or [])}")
-    print("  S7 ETag: see the '(etag)' line above")
+    print("  S7 ETag: see the '(etag)' line above. The bot only uses ETags when the planner")
+    print("     fits on one page; with several pages it always fetches them all.")
 
 
 if __name__ == "__main__":
