@@ -146,3 +146,20 @@ def test_validation_errors_never_echo_secrets() -> None:  # review I6
     for secret in (canvas, telegram):
         for fragment in (secret[:8], secret[-8:]):
             assert fragment not in message
+
+
+def test_unreadable_secret_file_explains_the_fix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:  # review C2
+    f = tmp_path / "canvas_token"
+    f.write_text("abc")
+    original = Path.read_text
+
+    def denied(self: Path, *args: object, **kwargs: object) -> str:
+        if self == f:
+            raise PermissionError(13, "Permission denied", str(self))
+        return original(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", denied)
+    with pytest.raises(ValueError, match=r"CANVAS_TOKEN_FILE can't be read.*chown 10001:10001"):
+        load_config(env(CANVAS_TOKEN="__unset__", CANVAS_TOKEN_FILE=str(f)))

@@ -26,12 +26,24 @@ The token is as powerful as your password, and it skips Duo/MFA. If it ever
 leaks, delete it in Canvas (Account → Settings → Approved Integrations)
 **and any other token you don't recognize**.
 
+With Docker on Linux, the container runs as user 10001 and can only read
+files it owns, so hand them over (they stay readable only by that user and root):
+
+```sh
+sudo chown 10001:10001 secrets/*.txt
+```
+
+To replace a token later, write it with `sudo`, for example
+`sudo sh -c "printf '%s' 'NEW-TOKEN' > secrets/canvas_token.txt"`. If the log
+ever says a token file "can't be read", this step is what's missing.
+
 ## 3. Create your Telegram bot
 
 1. In Telegram, message **@BotFather**, send `/newbot`, and pick a name.
 2. Save the token it gives you:
    ```sh
    printf '%s' 'PASTE-BOT-TOKEN' > secrets/telegram_bot_token.txt && chmod 600 secrets/telegram_bot_token.txt
+   sudo chown 10001:10001 secrets/telegram_bot_token.txt   # Docker on Linux only
    ```
 3. Open your new bot in Telegram and press **Start** (a bot can't message you first).
 

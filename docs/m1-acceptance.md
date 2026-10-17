@@ -7,6 +7,7 @@ messages, no false nags, and every digest on time.**
 
 ## One-time checks
 
+- [ ] **Docker start with the documented permissions:** `docker compose up -d --build`, then `docker compose ps` shows the bot running (not restarting) and `docker compose logs bot` shows no "can't be read".
 - [ ] **Pairing:** `/start <code>` from the log replies "Paired!"; a message from another Telegram account gets no reply.
 - [ ] **First digest:** at 08:00 (or `/digest`) the list matches your Canvas To Do list, ranked sensibly.
 - [ ] **Submission stops reminders:** for something due within 24 hours, submit it in Canvas. No reminder follows after the next sync (≤10 minutes).

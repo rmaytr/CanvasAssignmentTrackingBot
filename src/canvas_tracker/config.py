@@ -127,7 +127,13 @@ def _read_secret(env: Mapping[str, str], field: str) -> str:
     if direct is not None and path is not None:
         raise ValueError(f"set {name} or {name}_FILE, not both")
     if path is not None:
-        text = Path(path).read_text(encoding="utf-8").strip()
+        try:
+            text = Path(path).read_text(encoding="utf-8").strip()
+        except PermissionError:
+            raise ValueError(
+                f"{name}_FILE can't be read (permission denied). The container runs as "
+                f"user 10001, so on Linux give it the file: sudo chown 10001:10001 {path}"
+            ) from None
         if not text:
             raise ValueError(f"{name}_FILE is empty")
         return text
