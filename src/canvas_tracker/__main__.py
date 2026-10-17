@@ -37,6 +37,7 @@ def healthcheck(db_path: Path) -> int:
 
 def run() -> int:
     os.environ.setdefault("PTB_TIMEDELTA", "1")
+    from telegram.error import InvalidToken
     from telegram.ext import Application
 
     from canvas_tracker.bot.commands import register_handlers
@@ -117,7 +118,15 @@ def run() -> int:
     )
     register_handlers(app, deps)
     log.info("starting", extra={"canvas_host": settings.canvas_host, "tz": settings.tz})
-    app.run_polling(allowed_updates=["message", "callback_query"])
+    try:
+        app.run_polling(allowed_updates=["message", "callback_query"])
+    except InvalidToken:
+        # PTB's message contains the token, so report a fixed one through the redacting log.
+        log.error("Telegram rejected the bot token. Check TELEGRAM_BOT_TOKEN_FILE.")
+        return 2
+    except Exception:
+        log.exception("the bot stopped unexpectedly")
+        return 1
     return 0
 
 

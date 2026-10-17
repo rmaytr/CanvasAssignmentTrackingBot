@@ -134,3 +134,15 @@ def test_token_provider_uses_env_value_without_file() -> None:
 def test_hidden_courses() -> None:
     cfg = load_config(env(HIDE_COURSES=" PE 100, 4521 ,,"))
     assert hidden_courses(cfg) == frozenset({"PE 100", "4521"})
+
+
+def test_validation_errors_never_echo_secrets() -> None:  # review I6
+    canvas = "4242~SENTINELsentinelSENTINELsentinel00"
+    telegram = "424242424:SENTINEL_sentinel_SENTINEL_sentinel_00"
+    with pytest.raises(ValueError) as info:
+        load_config(env(TIMEZONE="__unset__", CANVAS_TOKEN=canvas, TELEGRAM_BOT_TOKEN=telegram))
+    message = str(info.value)
+    assert "TIMEZONE" in message
+    for secret in (canvas, telegram):
+        for fragment in (secret[:8], secret[-8:]):
+            assert fragment not in message

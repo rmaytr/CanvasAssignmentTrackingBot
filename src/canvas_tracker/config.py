@@ -15,7 +15,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from canvas_tracker.domain.models import Settings
@@ -144,8 +144,16 @@ def load_config(env: Mapping[str, str] | None = None) -> AppConfig:
         if field not in SECRET_FIELDS and field.upper() in source
     }
     for field in SECRET_FIELDS:
-        values[field] = _read_secret(source, field)
-    return AppConfig(**values)  # type: ignore[arg-type]
+        # Wrapped before validation, so no error message can ever echo a secret.
+        values[field] = SecretStr(_read_secret(source, field))
+    try:
+        return AppConfig(**values)  # type: ignore[arg-type]
+    except ValidationError as exc:
+        problems = [
+            f"{'.'.join(str(part) for part in error['loc']).upper() or 'CONFIG'}: {error['msg']}"
+            for error in exc.errors(include_input=False, include_url=False)
+        ]
+        raise ValueError("; ".join(problems)) from None
 
 
 def token_provider(cfg: AppConfig, env: Mapping[str, str] | None = None) -> Callable[[], str]:
