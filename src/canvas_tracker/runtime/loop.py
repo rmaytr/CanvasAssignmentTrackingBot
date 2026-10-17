@@ -130,10 +130,12 @@ class Runtime:
                 if not self.store.claim(send.key, send.kind, send.item_refs, now):
                     continue
                 messages = render_send(send, snap, now, self.settings, stale=stale)
+                done = self.store.parts_sent(send.key)  # resume a partly delivered split
                 try:
                     first_id: int | None = None
-                    for message in messages:
-                        message_id = await self.notifier.send(message)
+                    for index in range(done, len(messages)):
+                        message_id = await self.notifier.send(messages[index])
+                        self.store.mark_part_sent(send.key, index + 1)
                         first_id = message_id if first_id is None else first_id
                 except NotifyError as exc:
                     self.store.mark_failed(send.key, str(exc) or type(exc).__name__)

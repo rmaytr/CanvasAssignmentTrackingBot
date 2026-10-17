@@ -194,6 +194,15 @@ class Store:
             (to_db(now), message_id, key),
         )
 
+    def parts_sent(self, key: str) -> int:
+        row = self.conn.execute(
+            "SELECT parts_sent FROM notifications WHERE key = ?", (key,)
+        ).fetchone()
+        return 0 if row is None else int(row["parts_sent"])
+
+    def mark_part_sent(self, key: str, parts: int) -> None:
+        self.conn.execute("UPDATE notifications SET parts_sent = ? WHERE key = ?", (parts, key))
+
     def mark_failed(self, key: str, error: str) -> None:
         self.conn.execute(
             "UPDATE notifications SET status = 'failed', error = ? WHERE key = ?", (error, key)

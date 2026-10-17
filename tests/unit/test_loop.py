@@ -204,3 +204,35 @@ async def test_fresh_nags_have_no_stale_note() -> None:
     runtime, _store, _fake_sync, notifier, _clock = build()
     await runtime.tick()
     assert "Based on Canvas data" not in notifier.sent[0].text
+
+
+class FailSecondPartOnce:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+        self.calls = 0
+
+    async def send(self, msg: object) -> int | None:
+        from canvas_tracker.notify.base import NotifyError
+
+        self.calls += 1
+        if self.calls == 2:
+            raise NotifyError("NetworkError")
+        self.sent.append(getattr(msg, "text", ""))
+        return self.calls
+
+
+async def test_retry_resumes_after_the_last_part_sent() -> None:  # review I5
+    items = [
+        make_item(plannable_id=i, title=f"Task {i}", due_in=timedelta(hours=1, minutes=i))
+        for i in range(1, 41)
+    ]
+    notifier = FailSecondPartOnce()
+    runtime, store, _sync, _fake, clock = build(lambda _t: items)
+    runtime.notifier = notifier
+    await runtime.tick()
+    assert len(notifier.sent) == 1
+    clock.now = NOW + timedelta(minutes=3)
+    await runtime.tick()
+    assert len(notifier.sent) == 2
+    assert notifier.sent[0] != notifier.sent[1]
+    assert store.conn.execute("SELECT status FROM notifications").fetchone()[0] == "sent"
