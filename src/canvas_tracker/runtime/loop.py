@@ -32,6 +32,18 @@ PURGE_EVERY = timedelta(hours=24)
 PRESEND_SYNC_TIMEOUT_S = 30.0
 
 
+TICK_OFFSET_S = 1.0
+
+
+def next_tick_delay(now: datetime, interval_s: float = 60.0) -> float:
+    """Seconds until 1 s past the next interval boundary, so ticks never drift past a
+    whole minute (a skipped 23:59 would lose that minute's overdue notice)."""
+    if interval_s <= 0:
+        return 0.0
+    elapsed = (now.timestamp() - TICK_OFFSET_S) % interval_s
+    return round(interval_s - elapsed, 6)
+
+
 class SyncLike(Protocol):
     async def sync(self, now: datetime) -> SyncOutcome: ...
 
@@ -156,4 +168,4 @@ class Runtime:
                 await self.tick()
             except Exception:
                 log.exception("tick failed")  # logged through the redaction filter
-            await asyncio.sleep(interval_s)
+            await asyncio.sleep(next_tick_delay(self.clock(), interval_s))

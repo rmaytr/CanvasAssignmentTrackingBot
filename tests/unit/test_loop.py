@@ -236,3 +236,11 @@ async def test_retry_resumes_after_the_last_part_sent() -> None:  # review I5
     assert len(notifier.sent) == 2
     assert notifier.sent[0] != notifier.sent[1]
     assert store.conn.execute("SELECT status FROM notifications").fetchone()[0] == "sent"
+
+
+def test_ticks_align_to_one_second_past_each_minute() -> None:  # review Minor 1 (re-graded)
+    from canvas_tracker.runtime.loop import next_tick_delay
+
+    assert next_tick_delay(datetime(2026, 10, 20, 16, 0, 30, tzinfo=NOW.tzinfo)) == 31.0
+    assert next_tick_delay(datetime(2026, 10, 20, 16, 0, 59, 500000, tzinfo=NOW.tzinfo)) == 1.5
+    assert next_tick_delay(datetime(2026, 10, 20, 16, 0, 1, tzinfo=NOW.tzinfo)) == 60.0

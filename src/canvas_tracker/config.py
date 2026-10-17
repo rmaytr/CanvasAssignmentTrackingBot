@@ -15,7 +15,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, ValidationError, field_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from canvas_tracker.domain.models import Settings
@@ -114,6 +114,20 @@ class AppConfig(BaseSettings):
     def _quiet(cls, value: str) -> str:
         _parse_quiet(value)
         return value
+
+    @field_validator("telegram_owner_id", mode="before")
+    @classmethod
+    def _owner(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None  # "TELEGRAM_OWNER_ID=" means "not set": use pairing
+        return value
+
+    @model_validator(mode="after")
+    def _digest_window(self) -> AppConfig:
+        if self.digest_grace_until <= self.digest_time:
+            raise ValueError("DIGEST_GRACE_UNTIL must be later than DIGEST_TIME")
+        return self
 
     @field_validator("log_level", mode="before")
     @classmethod

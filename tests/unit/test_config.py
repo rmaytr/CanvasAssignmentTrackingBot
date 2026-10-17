@@ -163,3 +163,15 @@ def test_unreadable_secret_file_explains_the_fix(
     monkeypatch.setattr(Path, "read_text", denied)
     with pytest.raises(ValueError, match=r"CANVAS_TOKEN_FILE can't be read.*chown 10001:10001"):
         load_config(env(CANVAS_TOKEN="__unset__", CANVAS_TOKEN_FILE=str(f)))
+
+
+def test_grace_must_end_after_digest_time() -> None:  # review Minor 7 (re-graded)
+    with pytest.raises(ValueError, match="DIGEST_GRACE_UNTIL"):
+        load_config(env(DIGEST_TIME="08:00", DIGEST_GRACE_UNTIL="08:00"))
+    with pytest.raises(ValueError, match="DIGEST_GRACE_UNTIL"):
+        load_config(env(DIGEST_TIME="09:00", DIGEST_GRACE_UNTIL="07:00"))
+
+
+def test_empty_owner_id_means_unset() -> None:
+    assert load_config(env(TELEGRAM_OWNER_ID="")).telegram_owner_id is None
+    assert load_config(env(TELEGRAM_OWNER_ID=" 4242 ")).telegram_owner_id == 4242
