@@ -32,7 +32,12 @@ class CanvasError(Exception):
 
 
 class CanvasAuthError(CanvasError):
-    """401: the token is invalid, expired or revoked."""
+    """401. ``challenged`` is True when Canvas sent ``WWW-Authenticate``, which marks an
+    invalid, expired or revoked token; without it a 401 can just mean "not allowed here"."""
+
+    def __init__(self, message: str, challenged: bool = True) -> None:
+        super().__init__(message)
+        self.challenged = challenged
 
 
 class CanvasUnavailable(CanvasError):
@@ -163,7 +168,10 @@ class CanvasClient:
                 continue
             status = response.status_code
             if status == 401:
-                raise CanvasAuthError("Canvas rejected the access token (401)")
+                raise CanvasAuthError(
+                    "Canvas rejected the request (401)",
+                    challenged="WWW-Authenticate" in response.headers,
+                )
             if self._throttled(response) or status >= 500:
                 if last_try:
                     raise CanvasUnavailable(f"Canvas unavailable (HTTP {status})")

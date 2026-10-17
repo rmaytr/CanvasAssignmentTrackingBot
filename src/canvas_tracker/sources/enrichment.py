@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from canvas_tracker.domain.models import AssignmentDetail, AssignmentGroup, Course, Enrichment
-from canvas_tracker.sources.canvas_client import CanvasClient
+from canvas_tracker.sources.canvas_client import CanvasAuthError, CanvasClient, CanvasError
 from canvas_tracker.sources.planner import parse_time
+
+log = logging.getLogger(__name__)
 
 
 def _float(value: object, default: float = 0.0) -> float:
@@ -91,10 +94,19 @@ async def fetch_enrichment(client: CanvasClient) -> Enrichment:
         course = map_course(raw) if isinstance(raw, Mapping) else None
         if course is None:
             continue
-        raw_groups = await client.get_all(
-            f"/api/v1/courses/{course.id}/assignment_groups",
-            {"include[]": ["assignments"], "per_page": "100"},
-        )
+        try:
+            raw_groups = await client.get_all(
+                f"/api/v1/courses/{course.id}/assignment_groups",
+                {"include[]": ["assignments"], "per_page": "100"},
+            )
+        except CanvasAuthError as exc:
+            if exc.challenged:
+                raise  # the token itself is bad: stop
+            log.info("skipping a course the token can't read", extra={"course_id": course.id})
+            continue
+        except CanvasError:
+            log.info("skipping a course after an error", extra={"course_id": course.id})
+            continue
         course_groups, course_details, total = map_assignment_groups(
             course.id, [g for g in raw_groups if isinstance(g, Mapping)]
         )

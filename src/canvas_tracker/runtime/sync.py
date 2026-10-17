@@ -111,7 +111,14 @@ class SyncService:
         try:
             enrichment = await fetch_enrichment(self.client)
         except CanvasError as exc:
-            return self._failed(now, exc)
+            # Enrichment is best effort: its errors never set the auth or sync-error state,
+            # which belong to the planner sync (a 401 here can just mean "not allowed").
+            log.warning("enrichment failed", extra={"error": type(exc).__name__})
+            if isinstance(exc, CanvasAuthError):
+                return SyncOutcome.AUTH_FAILED
+            if isinstance(exc, CanvasUnavailable):
+                return SyncOutcome.UNAVAILABLE
+            return SyncOutcome.PROTOCOL_ERROR
         except Exception:
             log.exception("enrichment failed")
             return SyncOutcome.PROTOCOL_ERROR

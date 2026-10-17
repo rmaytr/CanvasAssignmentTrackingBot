@@ -154,3 +154,40 @@ async def test_unexpected_errors_become_protocol_errors(
     assert await svc.sync(NOW) is SyncOutcome.PROTOCOL_ERROR
     assert store.get_state(LAST_SYNC_ERROR) == "RuntimeError"
     assert await svc.enrich(NOW) is SyncOutcome.PROTOCOL_ERROR
+
+
+@respx.mock
+async def test_enrichment_401_on_one_course_skips_it_and_never_flags_auth(
+    store: Store,
+) -> None:  # review I2
+    respx.get(f"{BASE}{PLANNER_PATH}").respond(200, json=PLANNER)
+    respx.get(f"{BASE}/api/v1/courses").respond(
+        200,
+        json=[
+            {"id": 1, "course_code": "CS 101", "name": "A"},
+            {"id": 2, "course_code": "X", "name": "B"},
+        ],
+    )
+    respx.get(f"{BASE}/api/v1/courses/1/assignment_groups").respond(200, json=GROUPS)
+    respx.get(f"{BASE}/api/v1/courses/2/assignment_groups").respond(
+        401, json={"status": "unauthorized"}
+    )
+    svc = service(store)
+    await svc.sync(NOW)
+    assert await svc.enrich(NOW) is SyncOutcome.OK
+    assert store.get_time(AUTH_FAILED_SINCE) is None
+    assert [c.code for c in store.snapshot().courses.values()] == ["CS 101"]
+
+
+@respx.mock
+async def test_enrichment_failure_never_touches_auth_state(store: Store) -> None:
+    respx.get(f"{BASE}/api/v1/courses").respond(401, headers={"WWW-Authenticate": "Bearer"})
+    assert await service(store).enrich(NOW) is SyncOutcome.AUTH_FAILED
+    assert store.get_time(AUTH_FAILED_SINCE) is None and store.get_state(LAST_SYNC_ERROR) is None
+
+
+@respx.mock
+async def test_planner_401_without_challenge_is_still_auth_failure(store: Store) -> None:
+    respx.get(f"{BASE}{PLANNER_PATH}").respond(401)
+    assert await service(store).sync(NOW) is SyncOutcome.AUTH_FAILED
+    assert store.get_time(AUTH_FAILED_SINCE) == NOW

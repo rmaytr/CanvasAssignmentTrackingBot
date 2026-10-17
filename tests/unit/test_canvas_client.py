@@ -183,3 +183,16 @@ async def test_unreadable_token_file_is_an_auth_error() -> None:
 
     with pytest.raises(CanvasAuthError):
         await make_client(token=broken).get_json("/api/v1/x")
+
+
+@respx.mock
+async def test_401_records_whether_canvas_challenged_the_token() -> None:  # review I2
+    respx.get(f"{BASE}/api/v1/a").respond(
+        401, headers={"WWW-Authenticate": 'Bearer realm="canvas-lms"'}
+    )
+    respx.get(f"{BASE}/api/v1/b").respond(401, json={"status": "unauthorized"})
+    with pytest.raises(CanvasAuthError) as challenged:
+        await make_client().get_json("/api/v1/a")
+    with pytest.raises(CanvasAuthError) as plain:
+        await make_client().get_json("/api/v1/b")
+    assert challenged.value.challenged is True and plain.value.challenged is False
