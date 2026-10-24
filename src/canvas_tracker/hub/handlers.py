@@ -6,6 +6,7 @@ commands and buttons only ever see that user's own tenant.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import re
 from collections.abc import Callable, Coroutine
@@ -34,7 +35,7 @@ from canvas_tracker.bot.commands import (
     week_cmd,
 )
 from canvas_tracker.bot.deps import BotDeps
-from canvas_tracker.hub.parsing import looks_like_token
+from canvas_tracker.hub.parsing import contains_canvas_token, looks_like_token
 from canvas_tracker.hub.registry import User
 from canvas_tracker.hub.signup import TOKEN_STEPS, Reply, Signup
 from canvas_tracker.notify.telegram import to_markup
@@ -42,7 +43,7 @@ from canvas_tracker.render import copy
 
 Handler = Callable[[Update, Any], Coroutine[Any, Any, None]]
 ITEM_CALLBACK = re.compile(r"^[dsux]:\d+$")
-SETUP_CALLBACK = re.compile(r"^(su|set|bye):")
+SETUP_CALLBACK = re.compile(r"^(su|set|bye|rm):")
 
 
 async def send_replies(update: Update, replies: list[Reply]) -> None:
@@ -102,7 +103,8 @@ def start(signup: Signup) -> Handler:
 def help_cmd(signup: Signup) -> Handler:
     async def handler(update: Update, _context: Any) -> None:
         user = _current(signup, update)
-        text = copy.HELP + (copy.HELP_OWNER if user is not None and user.is_owner else "")
+        owner = user is not None and signup.is_owner(user)
+        text = copy.HELP + (copy.HELP_OWNER if owner else "")
         await send_replies(update, [Reply(text)])
 
     return handler
@@ -116,8 +118,11 @@ def routed(signup: Signup, factory: Callable[[BotDeps], Handler]) -> Handler:
         if user is None:
             return
         tenant = signup.hub.tenant(user.telegram_id)
-        if user.status != "active" or tenant is None:
+        if user.status != "active":
             await send_replies(update, [Reply(copy.FINISH_SIGNUP_FIRST), *signup.prompt(user)])
+            return
+        if tenant is None:
+            await send_replies(update, [Reply(copy.ACCOUNT_PROBLEM)])
             return
         await factory(tenant.deps)(update, context)
 
@@ -156,6 +161,8 @@ def setup_button(signup: Signup) -> Handler:
             replies = await signup.choice(user, kind, value)
         elif prefix == "set":
             replies = signup.begin_edit(user, rest)
+        elif prefix == "rm":
+            replies = await signup.remove_confirmed(user, rest)
         else:
             replies = await signup.disconnect(user, confirmed=rest == "yes")
         await send_replies(update, replies)
@@ -169,11 +176,20 @@ def on_text(signup: Signup) -> Handler:
         if user is None or message is None or not message.text:
             return
         text = message.text
-        if user.step in TOKEN_STEPS:
-            # A token must not stay in the chat history, whatever else happens.
-            with contextlib.suppress(TelegramError):
+        token_like = contains_canvas_token(text) or (
+            user.step in TOKEN_STEPS and looks_like_token(text)
+        )
+        if user.step in TOKEN_STEPS or token_like:
+            # A token must not stay in the chat history, at whatever step it was pasted.
+            deleted = True
+            try:
                 await message.delete()
-            if looks_like_token(text):
+            except TelegramError:
+                deleted = False
+            if token_like:
+                notice = copy.TOKEN_DELETED if deleted else copy.TOKEN_DELETE_FAILED
+                await send_replies(update, [Reply(notice)])
+            if user.step in TOKEN_STEPS and looks_like_token(text):
                 await send_replies(update, [Reply(copy.TOKEN_CHECKING)])
         await send_replies(update, await signup.text(user, text))
 
@@ -210,9 +226,23 @@ def remove_cmd(signup: Signup) -> Handler:
 
 
 def register_handlers(app: Application[Any, Any, Any, Any, Any, Any], signup: Signup) -> None:
+    # Updates run concurrently (one friend's slow Canvas mustn't stall the others), but
+    # each user's own updates still run in order, so sign-up steps never interleave.
+    locks: dict[int, asyncio.Lock] = {}
+
+    def serial(handler: Handler) -> Handler:
+        async def wrapped(update: Update, context: Any) -> None:
+            user = update.effective_user
+            if user is None:
+                return
+            async with locks.setdefault(user.id, asyncio.Lock()):
+                await handler(update, context)
+
+        return wrapped
+
     app.add_handler(build_gate(signup), group=-1)
-    app.add_handler(CommandHandler("start", start(signup)))
-    app.add_handler(CommandHandler("help", help_cmd(signup)))
+    app.add_handler(CommandHandler("start", serial(start(signup))))
+    app.add_handler(CommandHandler("help", serial(help_cmd(signup))))
     for name, factory in (
         ("today", today_cmd),
         ("week", week_cmd),
@@ -221,15 +251,15 @@ def register_handlers(app: Application[Any, Any, Any, Any, Any, Any], signup: Si
         ("status", status_cmd),
         ("pause", pause_cmd),
     ):
-        app.add_handler(CommandHandler(name, routed(signup, factory)))
-    app.add_handler(CommandHandler("settings", _simple(signup, signup.settings)))
-    app.add_handler(CommandHandler("cancel", _simple(signup, signup.cancel)))
+        app.add_handler(CommandHandler(name, serial(routed(signup, factory))))
+    app.add_handler(CommandHandler("settings", serial(_simple(signup, signup.settings))))
+    app.add_handler(CommandHandler("cancel", serial(_simple(signup, signup.cancel))))
     app.add_handler(
-        CommandHandler("disconnect", _simple(signup, lambda _u: signup.disconnect_prompt()))
+        CommandHandler("disconnect", serial(_simple(signup, lambda _u: signup.disconnect_prompt())))
     )
-    app.add_handler(CommandHandler("invite", invite_cmd(signup)))
-    app.add_handler(CommandHandler("users", _simple(signup, signup.users)))
-    app.add_handler(CommandHandler("remove", remove_cmd(signup)))
-    app.add_handler(CallbackQueryHandler(item_button(signup), pattern=ITEM_CALLBACK))
-    app.add_handler(CallbackQueryHandler(setup_button(signup), pattern=SETUP_CALLBACK))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text(signup)))
+    app.add_handler(CommandHandler("invite", serial(invite_cmd(signup))))
+    app.add_handler(CommandHandler("users", serial(_simple(signup, signup.users))))
+    app.add_handler(CommandHandler("remove", serial(remove_cmd(signup))))
+    app.add_handler(CallbackQueryHandler(serial(item_button(signup)), pattern=ITEM_CALLBACK))
+    app.add_handler(CallbackQueryHandler(serial(setup_button(signup)), pattern=SETUP_CALLBACK))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, serial(on_text(signup))))

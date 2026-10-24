@@ -22,7 +22,7 @@
    *No "+ New Access Token" button?* Your school doesn't allow tokens, so the bot can't
    work for you yet.
 4. **Pick your time zone** (a button, or type your city), **the time for your morning
-   list**, and **quiet hours** when the bot never messages you.
+   list** (any time up to 8 PM), and **quiet hours** when the bot never messages you.
 
 That's it: "✅ All set!".
 
@@ -43,7 +43,7 @@ That's it: "✅ All set!".
 | `/digest` | The morning list, right now |
 | `/sync` | Check Canvas right now |
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
-| `/settings` | Change time zone, morning time, quiet hours or Canvas token |
+| `/settings` | Change time zone, morning time, quiet hours, Canvas token or Canvas address |
 | `/disconnect` | Delete everything the bot knows about you |
 
 ## Your data

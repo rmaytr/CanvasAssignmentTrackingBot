@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import socket
 from collections.abc import Awaitable, Callable, Mapping
@@ -93,6 +94,7 @@ class Hub:
         self.owner_env_id = owner_env_id
         self.pairing = pairing
         self.tenants: dict[int, Tenant] = {}
+        self.broken: set[int] = set()
 
     # --- owner ---------------------------------------------------------------
 
@@ -117,18 +119,43 @@ class Hub:
             item_retention=self.item_retention,
         )
 
-    def load(self) -> None:
+    def load(self) -> list[int]:
+        """Start every active user. Returns the users who couldn't be started; a token that
+        doesn't decrypt means TOKEN_KEY changed, which is the owner's problem to fix, not a
+        reason to tell the user Canvas rejected them."""
+        broken: list[int] = []
         for user in self.registry.active_users():
             try:
+                if user.token_sealed is not None:
+                    self.box.open(user.token_sealed)
                 self.tenants[user.telegram_id] = self._build(user)
+            except ValueError:
+                broken.append(user.telegram_id)
+                log.error("stored token can't be decrypted: TOKEN_KEY doesn't match the data")
             except Exception:  # one broken record must not keep the others offline
+                broken.append(user.telegram_id)
                 log.exception("could not start user", extra={"user": user.telegram_id})
+        self.broken = set(broken)
+        return broken
+
+    async def tell_owner_about_broken(self) -> None:
+        owner = self.owner_id()
+        if not self.broken or owner is None:
+            return
+        from canvas_tracker.notify.base import NotifyError
+        from canvas_tracker.render import copy
+        from canvas_tracker.render.message import RenderedMessage
+
+        with contextlib.suppress(NotifyError):
+            text = copy.OWNER_BROKEN_USERS.format(count=len(self.broken))
+            await self.notifier_factory(owner).send(RenderedMessage(text))
 
     def tenant(self, telegram_id: int) -> Tenant | None:
         return self.tenants.get(telegram_id)
 
     async def refresh(self, telegram_id: int) -> Tenant | None:
-        """(Re)build a user's tenant from the registry, e.g. after sign-up or a settings change."""
+        """(Re)build a user's tenant from the registry and start its first tick, e.g. after
+        sign-up or a settings change."""
         old = self.tenants.pop(telegram_id, None)
         if old is not None:
             await old.close()
@@ -137,6 +164,8 @@ class Hub:
             return None
         tenant = self._build(user)
         self.tenants[telegram_id] = tenant
+        self.broken.discard(telegram_id)
+        tenant.start_tick()
         return tenant
 
     async def remove(self, telegram_id: int) -> None:
@@ -149,9 +178,16 @@ class Hub:
             path.with_name(path.name + suffix).unlink(missing_ok=True)
         self.registry.delete_user(telegram_id)
 
-    async def tick_all(self) -> None:
+    async def tick_all(self, wait_s: float = 50.0) -> None:
+        """Start every user's tick side by side and wait a little for them. A user whose
+        previous tick is still running (a hung Canvas) is skipped, never waited on, so
+        nobody else's minute is lost and the heartbeat keeps coming."""
         tenants = list(self.tenants.values())
-        await asyncio.gather(*(t.tick() for t in tenants))
+        busy = [t.running for t in tenants if t.running is not None]
+        started = [task for task in (t.start_tick() for t in tenants) if task is not None]
+        ticks = [*busy, *started]
+        if ticks:
+            await asyncio.wait(ticks, timeout=wait_s)
         self.registry.set_time(HUB_LAST_TICK_AT, self.clock())
 
     async def run_forever(self, interval_s: float = 60.0) -> None:

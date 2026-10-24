@@ -97,6 +97,7 @@ def run() -> int:
         with contextlib.suppress(TelegramError):  # only the menu; the bot works without it
             await application.bot.set_my_commands([BotCommand(c, d) for c, d in BOT_COMMANDS])
         hub.load()
+        await hub.tell_owner_about_broken()
         tasks["hub"] = asyncio.create_task(hub.run_forever())
         if hub.owner_id() is None:
             announce(pairing.code)
@@ -110,7 +111,14 @@ def run() -> int:
                 await task
         await hub.close()
 
-    app = Application.builder().token(bot_token).post_init(on_start).post_shutdown(on_stop).build()
+    app = (
+        Application.builder()
+        .token(bot_token)
+        .concurrent_updates(True)  # per-user ordering is kept by the handlers
+        .post_init(on_start)
+        .post_shutdown(on_stop)
+        .build()
+    )
     register_handlers(app, Signup(hub))
     try:
         app.run_polling(allowed_updates=["message", "callback_query"])

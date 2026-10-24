@@ -31,6 +31,7 @@ _UPDATABLE = frozenset(
         "suggested_tz",
         "digest_time",
         "quiet",
+        "pending_base_url",
     }
 )
 
@@ -49,6 +50,7 @@ class User:
     digest_time: time | None
     quiet: str
     created_at: datetime
+    pending_base_url: str | None = None
 
 
 def _user(row: sqlite3.Row) -> User:
@@ -67,6 +69,7 @@ def _user(row: sqlite3.Row) -> User:
         digest_time=time.fromisoformat(row["digest_time"]) if row["digest_time"] else None,
         quiet=row["quiet"],
         created_at=created,
+        pending_base_url=row["pending_base_url"],
     )
 
 

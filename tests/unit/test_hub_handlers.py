@@ -61,7 +61,12 @@ async def test_token_message_is_deleted(tmp_path: Path) -> None:
     bot = mock_bot()
     await on_text(env.signup)(message_update(GOOD_TOKEN, user_id=1, bot=bot), context())
     bot.delete_message.assert_awaited_once()
-    assert sent_texts(bot) == [copy.TOKEN_CHECKING, copy.TOKEN_SAVED, copy.ASK_TZ]
+    assert sent_texts(bot) == [
+        copy.TOKEN_DELETED,
+        copy.TOKEN_CHECKING,
+        copy.TOKEN_SAVED,
+        copy.ASK_TZ,
+    ]
     assert all(GOOD_TOKEN not in t for t in sent_texts(bot))
 
 

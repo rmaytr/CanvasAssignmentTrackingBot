@@ -34,8 +34,10 @@ def normalize_canvas_url(text: str) -> str | None:
         port = parts.port
     except ValueError:
         return None
+    if port not in (None, 443):
+        return None  # Canvas is on the normal HTTPS port; others would let the bot probe hosts
     try:
-        return validate_base_url(f"https://{host}" + (f":{port}" if port else ""))
+        return validate_base_url(f"https://{host}")
     except ValueError:
         return None
 
@@ -116,8 +118,10 @@ def resolve_timezone(text: str) -> str | None:
     key = " ".join(text.strip().lower().replace("_", " ").split())
     if not key:
         return None
-    for suffix in (" time", " standard time"):
-        key = key.removesuffix(suffix)
+    for suffix in (" standard time", " daylight time", " time"):
+        if key.endswith(suffix):
+            key = key.removesuffix(suffix)
+            break
     if key in _ALIASES:  # before zone names: "EST" is also a legacy fixed-offset zone
         return _ALIASES[key]
     exact, by_city = _zone_index()
@@ -166,6 +170,13 @@ def quiet_window(stored: str) -> tuple[time, time] | None:
     """The stored quiet-hours text as (start, end), or None when quiet hours are off."""
     parsed = parse_quiet(stored)
     return parsed if isinstance(parsed, tuple) else None
+
+
+CANVAS_TOKEN_RE = re.compile(r"\b\d{1,6}~[A-Za-z0-9]{20,}\b")  # same shape the logs redact
+
+
+def contains_canvas_token(text: str) -> bool:
+    return CANVAS_TOKEN_RE.search(text) is not None
 
 
 def looks_like_token(text: str) -> bool:

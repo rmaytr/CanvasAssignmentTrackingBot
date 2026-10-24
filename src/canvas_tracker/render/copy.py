@@ -79,7 +79,7 @@ HELP = "\n".join(
         "/sync: check Canvas right now",
         "/status: last sync, token state, next list and reminder",
         "/pause 3h | 30m | until 18:00 | off: pause reminders",
-        "/settings: time zone, morning time, quiet hours, Canvas token",
+        "/settings: time zone, morning time, quiet hours, Canvas token or address",
         "/disconnect: delete everything the bot knows about you",
         "/help: this list",
     ]
@@ -175,13 +175,20 @@ TOKEN_FORMAT = "That doesn't look like a token. Copy the whole token from Canvas
 TOKEN_CHECKING = "🔐 Checking the token with Canvas…"
 TOKEN_PROBLEMS = {
     "rejected": "✗ Canvas rejected that token. Make a new one and paste it here.",
-    "unreachable": "✗ I couldn't reach Canvas at {host}. Send /start to fix the address, "
-    "or paste the token again in a minute.",
-    "not_canvas": "✗ {host} doesn't answer like Canvas. Send /start to fix the address.",
+    "unreachable": "✗ I couldn't reach Canvas at {host}. Paste the token again in a minute, "
+    "or {fix}",
+    "not_canvas": "✗ {host} doesn't answer like Canvas, or doesn't accept tokens. To fix it, {fix}",
     "no_planner": "✗ The token works, but Canvas won't let it read your To Do list. "
     "Your school may restrict tokens. Paste another token or send /disconnect.",
 }
-TOKEN_SAVED = "✓ Token works. I deleted your message, and the token is stored encrypted."
+TOKEN_SAVED = "✓ Token works. It's stored encrypted."
+TOKEN_DELETED = "🧹 I deleted your message with the token from this chat."
+TOKEN_DELETE_FAILED = (
+    "⚠️ I couldn't delete your message with the token. Please delete it yourself "
+    "(press and hold it → Delete)."
+)
+FIX_ADDRESS_SIGNUP = "send /start to enter the address again."
+FIX_ADDRESS_SETTINGS = "send /settings → 🏫 Canvas address to change it."
 ASK_TZ = (
     "Step 3 of 5: Which time zone are you in? Tap one, or type your city "
     "(e.g. Chicago, Phoenix, Berlin)."
@@ -191,6 +198,9 @@ TZ_UNKNOWN = "I don't know that one. Try a big city near you, or a zone like Ame
 ASK_DIGEST = (
     "Step 4 of 5: When should your morning list arrive? Tap one, or type a time "
     "(e.g. 7:30 or 9:15 am)."
+)
+DIGEST_TOO_LATE = (
+    "Please pick a time between midnight and 8:00 PM, so a late list can still arrive."
 )
 CLOCK_INVALID = "I didn't get that time. Try something like 8:00, 7:30 am or 21:00."
 DIGEST_IN_QUIET = (
@@ -223,6 +233,27 @@ BTN_SET_TZ = "🌎 Time zone"
 BTN_SET_DIGEST = "☀️ Morning time"
 BTN_SET_QUIET = "🌙 Quiet hours"
 BTN_SET_TOKEN = "🔑 Canvas token"
+BTN_SET_URL = "🏫 Canvas address"
+ASK_URL_EDIT = (
+    "What's the new Canvas address (e.g. canvas.school.edu)? /cancel keeps the current one."
+)
+ASK_TOKEN_NEW_SITE = (
+    "Now make an access token on the new site (Account → Settings → + New Access Token) and "
+    "paste it here. I'll switch over once it works. /cancel keeps everything as it was."
+)
+ACCOUNT_PROBLEM = (
+    "⚠️ I can't read your stored Canvas token right now (the bot's owner changed its setup). "
+    "Send /settings, tap 🔑 Canvas token and paste a token again."
+)
+OWNER_BROKEN_USERS = (
+    "⚠️ {count} user(s) couldn't be started: their stored tokens don't match TOKEN_KEY. "
+    "If you replaced secrets/token_key.txt, put the old one back and restart. Otherwise they "
+    "need to paste a token again via /settings (they're told when they message the bot)."
+)
+REMOVE_CONFIRM = "Remove {name} ({host}) and delete their data?"
+BTN_REMOVE_YES = "Yes, remove {name}"
+BTN_CANCEL = "Cancel"
+REMOVE_GONE = "That person isn't connected any more."
 ASK_TZ_EDIT = "Which time zone? Tap one, or type your city. /cancel keeps the current one."
 ASK_DIGEST_EDIT = "What time should the morning list arrive? /cancel keeps the current one."
 ASK_QUIET_EDIT = "Which quiet hours? /cancel keeps the current ones."

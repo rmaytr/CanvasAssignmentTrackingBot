@@ -60,7 +60,8 @@ if ! sudo test -s "$SECRETS/telegram_bot_token.txt"; then
       echo "That doesn't look like a bot token (it looks like 123456789:ABC…). Try again:"
       continue
     fi
-    if ! ME="$(curl -fsS "https://api.telegram.org/bot${BOT_TOKEN}/getMe" 2>/dev/null)"; then
+    # The URL goes to curl on stdin, so the token never shows up in the process list.
+    if ! ME="$(printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$BOT_TOKEN" | curl -fsS -K - 2>/dev/null)"; then
       echo "Telegram didn't accept that token. Copy it again from @BotFather and paste it:"
       continue
     fi
@@ -73,9 +74,15 @@ if ! sudo test -s "$SECRETS/telegram_bot_token.txt"; then
 fi
 
 if ! sudo test -s "$SECRETS/token_key.txt"; then
+  if sudo docker volume inspect "$(basename "$DIR" | tr '[:upper:]' '[:lower:]')_data" >/dev/null 2>&1 \
+    && [ "${CANVAS_BOT_NEW_KEY:-}" != "yes" ]; then
+    fail "secrets/token_key.txt is missing, but the bot already has data. Put the old key back
+(from your backup) and run this again. A new key would make every stored Canvas token
+unreadable; if you really want that, run again with CANVAS_BOT_NEW_KEY=yes."
+  fi
   say "Creating the encryption key for everyone's Canvas tokens…"
-  python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())' \
-    > "$SECRETS/token_key.txt"
+  # 32 random bytes, URL-safe base64: the Fernet key format.
+  head -c 32 /dev/urandom | base64 | tr '+/' '-_' > "$SECRETS/token_key.txt"
 fi
 
 # The bot runs as user 10001 inside its container and must be able to read these.

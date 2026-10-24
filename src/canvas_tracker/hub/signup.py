@@ -6,7 +6,6 @@ registry or hub, and returns the replies to send. ``handlers.py`` wires it up.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import logging
 from dataclasses import dataclass
@@ -14,6 +13,7 @@ from datetime import time
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
+from canvas_tracker.bot.pairing import ALPHABET, CODE_LENGTH, PairingResult
 from canvas_tracker.hub.hub import Hub
 from canvas_tracker.hub.parsing import (
     looks_like_token,
@@ -34,6 +34,8 @@ log = logging.getLogger(__name__)
 
 Keyboard = tuple[tuple[Button, ...], ...]
 TOKEN_STEPS = frozenset({"token", "edit_token"})
+URL_STEPS = frozenset({"url", "edit_url"})
+LATEST_DIGEST = time(20, 0)  # leaves a 4 h same-day window for a late morning list
 _KIND_STEPS = {
     "tz": frozenset({"tz", "edit_tz"}),
     "dt": frozenset({"digest", "edit_digest"}),
@@ -112,27 +114,50 @@ def settings_keyboard() -> Keyboard:
     return (
         (Button(copy.BTN_SET_TZ, "set:tz"), Button(copy.BTN_SET_DIGEST, "set:dt")),
         (Button(copy.BTN_SET_QUIET, "set:qh"), Button(copy.BTN_SET_TOKEN, "set:tok")),
+        (Button(copy.BTN_SET_URL, "set:url"),),
     )
+
+
+_PAIRING_REPLIES = {
+    PairingResult.WRONG: copy.PAIR_WRONG,
+    PairingResult.EXPIRED: copy.PAIR_EXPIRED,
+    PairingResult.LOCKED: copy.PAIR_LOCKED,
+}
+
+
+def _pairing_shaped(arg: str) -> bool:
+    value = arg.strip().upper()
+    return len(value) == CODE_LENGTH and all(c in ALPHABET for c in value)
 
 
 class Signup:
     def __init__(self, hub: Hub) -> None:
         self.hub = hub
         self.registry = hub.registry
-        self._background: set[asyncio.Task[None]] = set()
 
     # --- prompts -------------------------------------------------------------
 
+    def is_owner(self, user: User) -> bool:
+        return user.telegram_id == self.hub.owner_id()
+
     def _token_prompt(self, user: User, edit: bool) -> Reply:
-        base = user.canvas_base_url or ""
+        new_site = edit and user.pending_base_url is not None
+        base = (user.pending_base_url if new_site else user.canvas_base_url) or ""
         link = Button(copy.BTN_OPEN_SETTINGS, url=f"{base}/profile/settings")
-        return Reply(copy.ASK_TOKEN_EDIT if edit else copy.ASK_TOKEN, ((link,),) if base else ())
+        text = (
+            copy.ASK_TOKEN_NEW_SITE
+            if new_site
+            else (copy.ASK_TOKEN_EDIT if edit else copy.ASK_TOKEN)
+        )
+        return Reply(text, ((link,),) if base else ())
 
     def prompt(self, user: User) -> list[Reply]:
         """Ask again for whatever the user's current step needs."""
         step = user.step
         if step == "url":
             return [Reply(copy.ASK_URL)]
+        if step == "edit_url":
+            return [Reply(copy.ASK_URL_EDIT)]
         if step in TOKEN_STEPS:
             return [self._token_prompt(user, edit=step == "edit_token")]
         if step in _KIND_STEPS["tz"]:
@@ -152,18 +177,21 @@ class Signup:
         user = self.registry.get_user(telegram_id)
         if user is not None:
             if user.status == "active":
+                if user.step is not None:  # leave any half-finished settings change
+                    self.registry.update_user(telegram_id, step=None, pending_base_url=None)
                 return [self.welcome(user)]
             self.registry.update_user(telegram_id, step="url")
             return [Reply(copy.ASK_URL)]
         now = self.hub.clock()
         owner = self.hub.owner_id()
-        if owner is None and self.hub.pairing is not None and arg:
-            from canvas_tracker.bot.pairing import PairingResult
-
-            if self.hub.pairing.check(arg) is PairingResult.OK:
+        if owner is None and self.hub.pairing is not None and arg and _pairing_shaped(arg):
+            # Only code-shaped attempts count, so random /start args can't burn the code.
+            result = self.hub.pairing.check(arg)
+            if result is PairingResult.OK:
                 self.registry.set_state(OWNER_KEY, str(telegram_id))
                 self.registry.create_user(telegram_id, name, now=now, is_owner=True)
                 return [Reply(copy.PAIRED_OWNER), Reply(copy.SIGNUP_INTRO), Reply(copy.ASK_URL)]
+            return [Reply(_PAIRING_REPLIES[result])]
         if owner == telegram_id:
             self.registry.create_user(telegram_id, name, now=now, is_owner=True)
             return [Reply(copy.SIGNUP_INTRO), Reply(copy.ASK_URL)]
@@ -178,7 +206,7 @@ class Signup:
     def welcome(self, user: User) -> Reply:
         tenant = self.hub.tenant(user.telegram_id)
         if tenant is None:
-            return Reply(copy.HELP)
+            return Reply(copy.ACCOUNT_PROBLEM)
         s = tenant.settings
         interval = int(s.reminder_interval.total_seconds() // 60)
         return Reply(
@@ -197,7 +225,7 @@ class Signup:
         step = user.step
         if step is None:
             return [Reply(copy.HELP)]
-        if step == "url":
+        if step in URL_STEPS:
             return await self._url(user, text)
         if step in TOKEN_STEPS:
             return await self._token(user, text)
@@ -225,6 +253,11 @@ class Signup:
             return [Reply(copy.URL_INVALID)]
         if not await self.hub.host_check(urlsplit(base).hostname or ""):
             return [Reply(copy.URL_UNREACHABLE)]
+        if user.step == "edit_url":  # switch only once a token for the new site works
+            self.registry.update_user(user.telegram_id, pending_base_url=base, step="edit_token")
+            updated = self.registry.get_user(user.telegram_id)
+            assert updated is not None  # noqa: S101
+            return [self._token_prompt(updated, edit=True)]
         self.registry.update_user(user.telegram_id, canvas_base_url=base, step="token")
         updated = self.registry.get_user(user.telegram_id)
         assert updated is not None  # noqa: S101
@@ -237,13 +270,22 @@ class Signup:
         token = text.strip()
         if not looks_like_token(token):
             return [Reply(copy.TOKEN_FORMAT)]
-        result = await self.hub.verify(user.canvas_base_url, token)
+        editing = user.step == "edit_token"
+        base = (user.pending_base_url if editing else None) or user.canvas_base_url
+        result = await self.hub.verify(base, token)
         if result.problem is not None:
-            host = urlsplit(user.canvas_base_url).hostname or user.canvas_base_url
-            return [Reply(copy.TOKEN_PROBLEMS[result.problem].format(host=host))]
+            host = urlsplit(base).hostname or base
+            fix = copy.FIX_ADDRESS_SETTINGS if editing else copy.FIX_ADDRESS_SIGNUP
+            return [Reply(copy.TOKEN_PROBLEMS[result.problem].format(host=host, fix=fix))]
         sealed = self.hub.box.seal(token)
-        if user.step == "edit_token":
-            self.registry.update_user(user.telegram_id, token_sealed=sealed, step=None)
+        if editing:
+            self.registry.update_user(
+                user.telegram_id,
+                token_sealed=sealed,
+                canvas_base_url=base,
+                pending_base_url=None,
+                step=None,
+            )
             await self._refresh(user.telegram_id)
             return [Reply(copy.TOKEN_SAVED)]
         self.registry.update_user(
@@ -267,6 +309,8 @@ class Signup:
     async def _digest(self, user: User, at: time | None) -> list[Reply]:
         if at is None:
             return [Reply(copy.CLOCK_INVALID)]
+        if at > LATEST_DIGEST:
+            return [Reply(copy.DIGEST_TOO_LATE)]
         if user.step == "edit_digest":
             quiet = quiet_window(user.quiet)
             if quiet is not None and _inside(at, quiet[0], quiet[1]):
@@ -300,12 +344,8 @@ class Signup:
         ]
 
     async def _refresh(self, telegram_id: int) -> None:
-        """Rebuild the user's tenant and run its first tick (sync, maybe a message) soon."""
-        tenant = await self.hub.refresh(telegram_id)
-        if tenant is not None:
-            task = asyncio.create_task(tenant.tick())
-            self._background.add(task)
-            task.add_done_callback(self._background.discard)
+        """Rebuild the user's tenant; its first tick (sync, maybe a message) starts right away."""
+        await self.hub.refresh(telegram_id)
 
     async def _saved(self, telegram_id: int) -> list[Reply]:
         await self._refresh(telegram_id)
@@ -327,17 +367,23 @@ class Signup:
         return [Reply(text, settings_keyboard())]
 
     def begin_edit(self, user: User, what: str) -> list[Reply]:
-        steps = {"tz": "edit_tz", "dt": "edit_digest", "qh": "edit_quiet", "tok": "edit_token"}
+        steps = {
+            "tz": "edit_tz",
+            "dt": "edit_digest",
+            "qh": "edit_quiet",
+            "tok": "edit_token",
+            "url": "edit_url",
+        }
         if user.status != "active" or what not in steps:
             return self.prompt(user)
-        self.registry.update_user(user.telegram_id, step=steps[what])
+        self.registry.update_user(user.telegram_id, step=steps[what], pending_base_url=None)
         updated = self.registry.get_user(user.telegram_id)
         assert updated is not None  # noqa: S101
         return self.prompt(updated)
 
     def cancel(self, user: User) -> list[Reply]:
         if user.status == "active" and user.step is not None:
-            self.registry.update_user(user.telegram_id, step=None)
+            self.registry.update_user(user.telegram_id, step=None, pending_base_url=None)
             return [Reply(copy.CANCELLED)]
         if user.status != "active":
             return self.prompt(user)
@@ -361,7 +407,7 @@ class Signup:
     # --- owner commands ------------------------------------------------------
 
     def invite(self, user: User, bot_username: str | None) -> list[Reply]:
-        if not user.is_owner:
+        if not self.is_owner(user):
             return [Reply(copy.OWNER_ONLY)]
         if not bot_username:
             return [Reply(copy.INVITE_NO_USERNAME)]
@@ -369,7 +415,7 @@ class Signup:
         return [Reply(copy.INVITE_LINK.format(link=f"https://t.me/{bot_username}?start={code}"))]
 
     def users(self, user: User) -> list[Reply]:
-        if not user.is_owner:
+        if not self.is_owner(user):
             return [Reply(copy.OWNER_ONLY)]
         now = self.hub.clock()
         zone = ZoneInfo(user.tz or "UTC")
@@ -400,12 +446,33 @@ class Signup:
         return [Reply("\n".join(lines))]
 
     async def remove(self, user: User, arg: str | None) -> list[Reply]:
-        if not user.is_owner:
+        if not self.is_owner(user):
             return [Reply(copy.OWNER_ONLY)]
         everyone = self.registry.all_users()
         if arg is None or not arg.strip().isdigit() or not 1 <= int(arg) <= len(everyone):
             return [Reply(copy.REMOVE_USAGE)]
         target = everyone[int(arg) - 1]
+        if target.telegram_id == user.telegram_id:
+            return [Reply(copy.REMOVE_SELF)]
+        # Positions shift when someone leaves, so the button names the person by ID.
+        name = target.display_name or "?"
+        host = urlsplit(target.canvas_base_url or "").hostname or "—"
+        keyboard = (
+            (
+                Button(copy.BTN_REMOVE_YES.format(name=name)[:40], f"rm:{target.telegram_id}"),
+                Button(copy.BTN_CANCEL, "rm:no"),
+            ),
+        )
+        return [Reply(copy.REMOVE_CONFIRM.format(name=name, host=host), keyboard)]
+
+    async def remove_confirmed(self, user: User, value: str) -> list[Reply]:
+        if not self.is_owner(user):
+            return [Reply(copy.OWNER_ONLY)]
+        if not value.isdigit():
+            return [Reply(copy.CANCELLED)]
+        target = self.registry.get_user(int(value))
+        if target is None:
+            return [Reply(copy.REMOVE_GONE)]
         if target.telegram_id == user.telegram_id:
             return [Reply(copy.REMOVE_SELF)]
         with contextlib.suppress(NotifyError):

@@ -80,7 +80,7 @@ Owner commands:
 |---|---|
 | `/invite` | A new one-time sign-up link |
 | `/users` | Who's connected, their school, and whether their Canvas access works (never their assignments) |
-| `/remove 3` | Remove user 3 from the `/users` list and delete their data (they get a message) |
+| `/remove 3` | Remove user 3 from the `/users` list: the bot asks you to confirm by name, then deletes their data and tells them |
 
 Up to 25 people can sign up; change `MAX_USERS` in `~/CanvasAssignmentTrackingBot/.env`
 and run the install command again to apply it.
@@ -104,16 +104,19 @@ anyone's tokens.
 ## Keep the key safe
 
 `~/CanvasAssignmentTrackingBot/secrets/token_key.txt` encrypts everyone's Canvas
-tokens. If it's lost, the bot can't read the stored tokens: everyone has to paste
-a new one through `/settings → 🔑 Canvas token`. Nothing else is lost. Don't share
+tokens. If it's lost, the bot can't read the stored tokens: it tells you, and each
+person has to paste a token again through `/settings → 🔑 Canvas token`. Nothing else
+is lost. The installer refuses to make a new key while old data exists. Don't share
 the key, and don't copy it anywhere public.
 
 To back up everything (the key and all data) to your computer, run in Cloud Shell:
 
 ```sh
 gcloud compute ssh canvas-bot --zone=us-central1-a --command \
-  'cd ~/CanvasAssignmentTrackingBot && sudo tar czf - secrets $(sudo docker volume inspect -f "{{.Mountpoint}}" canvasassignmenttrackingbot_data)' > canvas-bot-backup.tgz
+  'cd ~/CanvasAssignmentTrackingBot && sudo docker compose stop >/dev/null && sudo tar czf - secrets $(sudo docker volume inspect -f "{{.Mountpoint}}" canvasassignmenttrackingbot_data); sudo docker compose start >/dev/null' > canvas-bot-backup.tgz
 ```
+
+(It pauses the bot for a few seconds so the copy is consistent.)
 
 then download `canvas-bot-backup.tgz` with Cloud Shell's **⋮ → Download**. Keep it private.
 

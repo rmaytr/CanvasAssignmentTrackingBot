@@ -8,6 +8,7 @@ another user's data.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime, time, timedelta
@@ -112,15 +113,42 @@ class Tenant:
         )
         self.deps = BotDeps(store=self.store, settings=self.settings, clock=clock, sync=self.sync)
         self._lock = asyncio.Lock()
+        self._task: asyncio.Task[None] | None = None
+        self.closed = False
+
+    @property
+    def busy(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    @property
+    def running(self) -> asyncio.Task[None] | None:
+        return self._task if self.busy else None
+
+    def start_tick(self) -> asyncio.Task[None] | None:
+        """Run one tick in the background, unless the previous one is still going."""
+        if self.closed or self.busy:
+            return None
+        self._task = asyncio.create_task(self.tick())
+        return self._task
 
     async def tick(self) -> None:
         async with self._lock:
+            if self.closed:
+                return
             try:
                 await self.runtime.tick()
             except Exception:  # one user's failure must never reach anyone else's tick
                 log.exception("tick failed", extra={"user": self.telegram_id})
 
     async def close(self) -> None:
+        """Stop a running tick (it may be stuck on a slow Canvas) and release the files."""
+        if self.closed:
+            return
+        self.closed = True
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
         async with self._lock:
             await self.client.aclose()
             self.store.conn.close()

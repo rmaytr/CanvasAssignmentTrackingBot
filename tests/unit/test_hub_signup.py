@@ -169,6 +169,7 @@ async def test_settings_edits_rebuild_the_tenant(tmp_path: Path) -> None:
         "set:dt",
         "set:qh",
         "set:tok",
+        "set:url",
     ]
 
     env.signup.begin_edit(user, "tz")
@@ -255,7 +256,9 @@ async def test_owner_commands(tmp_path: Path) -> None:
     assert texts(await env.signup.remove(friend, "1")) == [copy.OWNER_ONLY]
     assert texts(await env.signup.remove(owner, "1")) == [copy.REMOVE_SELF]
     assert texts(await env.signup.remove(owner, "9")) == [copy.REMOVE_USAGE]
-    assert texts(await env.signup.remove(owner, "2")) == [copy.REMOVED.format(name="Ben")]
+    [confirm] = await env.signup.remove(owner, "2")
+    assert confirm.text.startswith("Remove Ben")
+    assert texts(await env.signup.remove_confirmed(owner, "5")) == [copy.REMOVED.format(name="Ben")]
     assert env.hub.registry.get_user(5) is None
     assert env.notifiers[5].sent[-1].text == copy.REMOVED_BY_OWNER
 
