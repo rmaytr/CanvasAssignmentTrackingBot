@@ -1,4 +1,4 @@
-"""What the Telegram handlers need, bundled so handlers can be built per process."""
+"""What the per-user Telegram handlers need: one user's store, settings and sync."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from canvas_tracker.bot.pairing import PairingCode
 from canvas_tracker.domain.models import Settings
 from canvas_tracker.store.repo import Store
 
@@ -21,6 +20,4 @@ class BotDeps:
     settings: Settings
     clock: Callable[[], datetime]
     sync: SyncService
-    pairing: PairingCode
-    env_owner_id: int | None
-    hidden_courses: frozenset[str]
+    hidden_courses: frozenset[str] = frozenset()

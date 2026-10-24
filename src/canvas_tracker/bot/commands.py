@@ -1,4 +1,4 @@
-"""Chat commands: /today /week /digest /sync /status /pause (plus /start, /help)."""
+"""Per-user chat commands: /today /week /digest /sync /status /pause."""
 
 from __future__ import annotations
 
@@ -8,12 +8,9 @@ from typing import Any
 
 from telegram import LinkPreviewOptions, Update
 from telegram.constants import ParseMode
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
 from canvas_tracker import __version__
-from canvas_tracker.bot.callbacks import on_callback
 from canvas_tracker.bot.deps import BotDeps
-from canvas_tracker.bot.gate import build_gate, help_cmd, start
 from canvas_tracker.domain.done_rule import is_done
 from canvas_tracker.notify.telegram import to_markup
 from canvas_tracker.planning.keys import digest_key
@@ -155,20 +152,3 @@ def pause_cmd(deps: BotDeps) -> Handler:
             )
 
     return handler
-
-
-def register_handlers(app: Application[Any, Any, Any, Any, Any, Any], deps: BotDeps) -> None:
-    """The owner gate first (group -1), then every command and the button handler."""
-    app.add_handler(build_gate(deps), group=-1)
-    for name, factory in (
-        ("start", start),
-        ("help", help_cmd),
-        ("today", today_cmd),
-        ("week", week_cmd),
-        ("digest", digest_cmd),
-        ("sync", sync_cmd),
-        ("status", status_cmd),
-        ("pause", pause_cmd),
-    ):
-        app.add_handler(CommandHandler(name, factory(deps)))
-    app.add_handler(CallbackQueryHandler(on_callback(deps)))

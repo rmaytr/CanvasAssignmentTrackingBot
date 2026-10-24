@@ -1,78 +1,62 @@
-"""Configuration from environment variables, validated at startup (PRD §7.8).
+"""Bot-wide configuration from environment variables, validated at startup.
 
-Secrets are accepted as ``X`` or ``X_FILE`` (a path, read and stripped). The
-recommended form is the file, e.g. a Docker secret under /run/secrets.
+Friends mode: each user's Canvas address, token, time zone, morning time and
+quiet hours are set in the chat and kept in the registry, not here. Secrets
+are accepted as ``X`` or ``X_FILE`` (a path, read and stripped); the file form
+is meant for Docker secrets under /run/secrets.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import os
-from collections.abc import Callable, Mapping
-from datetime import time, timedelta
+from collections.abc import Mapping
+from datetime import timedelta
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
-from canvas_tracker.domain.models import Settings
-
-SECRET_FIELDS = ("canvas_token", "telegram_bot_token")
+SECRET_FIELDS = ("telegram_bot_token", "token_key")
 
 
 def validate_base_url(url: str) -> str:
     """HTTPS origin only: no credentials, path, query, fragment or raw IP address."""
     parts = urlsplit(url.strip())
     if parts.scheme != "https":
-        raise ValueError("CANVAS_BASE_URL must start with https://")
+        raise ValueError("the Canvas address must start with https://")
     if parts.username is not None or parts.password is not None:
-        raise ValueError("CANVAS_BASE_URL must not contain a username or password")
+        raise ValueError("the Canvas address must not contain a username or password")
     if parts.path not in ("", "/") or parts.query or parts.fragment:
-        raise ValueError("CANVAS_BASE_URL must be just the site, e.g. https://canvas.school.edu")
+        raise ValueError("the Canvas address must be just the site, e.g. https://canvas.school.edu")
     host = (parts.hostname or "").lower()
     if not host:
-        raise ValueError("CANVAS_BASE_URL has no host name")
+        raise ValueError("the Canvas address has no host name")
     try:
         ipaddress.ip_address(host)
     except ValueError:
         pass
     else:
-        raise ValueError("CANVAS_BASE_URL must use a host name, not an IP address")
+        raise ValueError("the Canvas address must use a host name, not an IP address")
     port = f":{parts.port}" if parts.port is not None else ""
     return f"https://{host}{port}"
-
-
-def _parse_quiet(value: str) -> tuple[time, time] | None:
-    if value.strip().lower() == "off":
-        return None
-    start, sep, end = value.partition("-")
-    if not sep:
-        raise ValueError('QUIET_HOURS must look like "00:00-08:00" or be "off"')
-    return time.fromisoformat(start.strip()), time.fromisoformat(end.strip())
 
 
 class AppConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
-    data_mode: Literal["api"] = "api"
-    canvas_base_url: str
-    canvas_token: SecretStr
     telegram_bot_token: SecretStr
-    telegram_owner_id: int | None = None
-    timezone: str
-    digest_time: time = time(8, 0)
-    digest_grace_until: time = time(12, 0)
+    token_key: SecretStr
+    owner_telegram_id: int | None = None
+    data_dir: Path = Path("/data")
+    max_users: int = Field(25, ge=1, le=500)
     digest_lookahead_days: int = Field(14, ge=1, le=60)
     reminder_window_hours: int = Field(24, ge=1, le=168)
     reminder_interval_minutes: int = Field(120, ge=30)
-    quiet_hours: str = "00:00-08:00"
     overdue_reminders: bool = False
     overdue_reminder_max_hours: int = Field(48, ge=1, le=336)
-    hide_courses: str = ""
-    db_path: Path = Path("/data/bot.db")
     item_retention_days: int = Field(30, ge=1)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
@@ -88,46 +72,21 @@ class AppConfig(BaseSettings):
         # load_config() reads the environment itself (to support *_FILE secrets).
         return (init_settings,)
 
-    @field_validator("data_mode", mode="before")
-    @classmethod
-    def _mode(cls, value: object) -> object:
-        if isinstance(value, str) and value.strip().lower() == "ical":
-            raise ValueError("DATA_MODE=ical arrives in v1.0 (M2)")
-        return value
-
-    @field_validator("canvas_base_url")
-    @classmethod
-    def _base_url(cls, value: str) -> str:
-        return validate_base_url(value)
-
-    @field_validator("timezone")
-    @classmethod
-    def _zone(cls, value: str) -> str:
-        try:
-            ZoneInfo(value)
-        except (ZoneInfoNotFoundError, ValueError) as exc:
-            raise ValueError(f"unknown TIMEZONE {value!r}; use an IANA name") from exc
-        return value
-
-    @field_validator("quiet_hours")
-    @classmethod
-    def _quiet(cls, value: str) -> str:
-        _parse_quiet(value)
-        return value
-
-    @field_validator("telegram_owner_id", mode="before")
+    @field_validator("owner_telegram_id", mode="before")
     @classmethod
     def _owner(cls, value: object) -> object:
         if isinstance(value, str):
             value = value.strip()
-            return value or None  # "TELEGRAM_OWNER_ID=" means "not set": use pairing
+            return value or None  # "OWNER_TELEGRAM_ID=" means "not set": use pairing
         return value
 
-    @model_validator(mode="after")
-    def _digest_window(self) -> AppConfig:
-        if self.digest_grace_until <= self.digest_time:
-            raise ValueError("DIGEST_GRACE_UNTIL must be later than DIGEST_TIME")
-        return self
+    @field_validator("token_key")
+    @classmethod
+    def _key(cls, value: SecretStr) -> SecretStr:
+        from canvas_tracker.hub.secretbox import SecretBox
+
+        SecretBox(value.get_secret_value())  # raises a message that never echoes the key
+        return value
 
     @field_validator("log_level", mode="before")
     @classmethod
@@ -176,34 +135,12 @@ def load_config(env: Mapping[str, str] | None = None) -> AppConfig:
         raise ValueError("; ".join(problems)) from None
 
 
-def token_provider(cfg: AppConfig, env: Mapping[str, str] | None = None) -> Callable[[], str]:
-    """The Canvas token. With CANVAS_TOKEN_FILE it is re-read on every call, so a renewed
-    token takes effect without a restart (PRD §7.1)."""
-    source = os.environ if env is None else env
-    path = source.get("CANVAS_TOKEN_FILE")
-    if path is None:
-        token = cfg.canvas_token.get_secret_value()
-        return lambda: token
-    file = Path(path)
-    return lambda: file.read_text(encoding="utf-8").strip()
-
-
-def to_settings(cfg: AppConfig) -> Settings:
-    quiet = _parse_quiet(cfg.quiet_hours)
-    return Settings(
-        tz=cfg.timezone,
-        digest_time=cfg.digest_time,
-        digest_grace_until=cfg.digest_grace_until,
-        digest_lookahead=timedelta(days=cfg.digest_lookahead_days),
-        reminder_window=timedelta(hours=cfg.reminder_window_hours),
-        reminder_interval=timedelta(minutes=cfg.reminder_interval_minutes),
-        quiet_start=None if quiet is None else quiet[0],
-        quiet_end=None if quiet is None else quiet[1],
-        overdue_reminders=cfg.overdue_reminders,
-        overdue_reminder_max=timedelta(hours=cfg.overdue_reminder_max_hours),
-        canvas_host=urlsplit(cfg.canvas_base_url).hostname or "",
-    )
-
-
-def hidden_courses(cfg: AppConfig) -> frozenset[str]:
-    return frozenset(part.strip() for part in cfg.hide_courses.split(",") if part.strip())
+def base_settings(cfg: AppConfig) -> dict[str, object]:
+    """The reminder rules every user shares; each user adds their own zone and times."""
+    return {
+        "digest_lookahead": timedelta(days=cfg.digest_lookahead_days),
+        "reminder_window": timedelta(hours=cfg.reminder_window_hours),
+        "reminder_interval": timedelta(minutes=cfg.reminder_interval_minutes),
+        "overdue_reminders": cfg.overdue_reminders,
+        "overdue_reminder_max": timedelta(hours=cfg.overdue_reminder_max_hours),
+    }

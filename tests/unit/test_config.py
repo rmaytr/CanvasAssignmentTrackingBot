@@ -1,22 +1,13 @@
-from datetime import time, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
-from canvas_tracker.config import (
-    hidden_courses,
-    load_config,
-    to_settings,
-    token_provider,
-    validate_base_url,
-)
+from canvas_tracker.config import base_settings, load_config, validate_base_url
+from canvas_tracker.hub.secretbox import generate_key
 
-BASE_ENV = {
-    "CANVAS_BASE_URL": "https://canvas.example.edu",
-    "CANVAS_TOKEN": "1234~abc",
-    "TELEGRAM_BOT_TOKEN": "123:abc",
-    "TIMEZONE": "America/New_York",
-}
+KEY = generate_key()
+BASE_ENV = {"TELEGRAM_BOT_TOKEN": "123:abc", "TOKEN_KEY": KEY}
 
 
 def env(**overrides: str) -> dict[str, str]:
@@ -54,38 +45,36 @@ def test_validate_base_url_rejects(url: str) -> None:
         validate_base_url(url)
 
 
-def test_defaults_and_settings_mapping() -> None:
+def test_defaults() -> None:
     cfg = load_config(env())
-    s = to_settings(cfg)
-    assert (s.tz, s.digest_time, s.digest_grace_until) == ("America/New_York", time(8), time(12))
-    assert (s.quiet_start, s.quiet_end) == (time(0), time(8))
-    assert s.reminder_interval == timedelta(minutes=120)
-    assert s.reminder_window == timedelta(hours=24)
-    assert s.digest_lookahead == timedelta(days=14)
-    assert s.overdue_reminder_max == timedelta(hours=48)
-    assert s.canvas_host == "canvas.example.edu"
-    assert cfg.db_path == Path("/data/bot.db") and cfg.item_retention_days == 30
+    assert cfg.data_dir == Path("/data")
+    assert cfg.max_users == 25 and cfg.owner_telegram_id is None
+    s = base_settings(cfg)
+    assert s["reminder_interval"] == timedelta(minutes=120)
+    assert s["reminder_window"] == timedelta(hours=24)
+    assert s["digest_lookahead"] == timedelta(days=14)
+    assert s["overdue_reminder_max"] == timedelta(hours=48)
 
 
-def test_secret_file_is_stripped(tmp_path: Path) -> None:  # Review Focus 5
-    f = tmp_path / "canvas_token"
-    f.write_text("  abc123\n")
-    cfg = load_config(env(CANVAS_TOKEN="__unset__", CANVAS_TOKEN_FILE=str(f)))
-    assert cfg.canvas_token.get_secret_value() == "abc123"
+def test_secret_file_is_stripped(tmp_path: Path) -> None:
+    f = tmp_path / "key"
+    f.write_text(f"  {KEY}\n")
+    cfg = load_config(env(TOKEN_KEY="__unset__", TOKEN_KEY_FILE=str(f)))
+    assert cfg.token_key.get_secret_value() == KEY
 
 
 def test_empty_secret_file_fails_clearly(tmp_path: Path) -> None:
-    f = tmp_path / "canvas_token"
+    f = tmp_path / "key"
     f.write_text("\n")
-    with pytest.raises(ValueError, match="CANVAS_TOKEN_FILE is empty"):
-        load_config(env(CANVAS_TOKEN="__unset__", CANVAS_TOKEN_FILE=str(f)))
+    with pytest.raises(ValueError, match="TOKEN_KEY_FILE is empty"):
+        load_config(env(TOKEN_KEY="__unset__", TOKEN_KEY_FILE=str(f)))
 
 
 def test_both_secret_forms_fail(tmp_path: Path) -> None:
     f = tmp_path / "t"
     f.write_text("x")
-    with pytest.raises(ValueError, match="set CANVAS_TOKEN or CANVAS_TOKEN_FILE, not both"):
-        load_config(env(CANVAS_TOKEN_FILE=str(f)))
+    with pytest.raises(ValueError, match="set TOKEN_KEY or TOKEN_KEY_FILE, not both"):
+        load_config(env(TOKEN_KEY_FILE=str(f)))
 
 
 def test_missing_secret_names_both_forms() -> None:
@@ -93,85 +82,38 @@ def test_missing_secret_names_both_forms() -> None:
         load_config(env(TELEGRAM_BOT_TOKEN="__unset__"))
 
 
+def test_bad_key_is_rejected_without_echoing_it() -> None:
+    with pytest.raises(ValueError, match="TOKEN_KEY") as info:
+        load_config(env(TOKEN_KEY="definitely-not-a-key"))
+    assert "definitely-not-a-key" not in str(info.value)
+
+
 def test_rejects_bad_values() -> None:
     with pytest.raises(ValueError):
         load_config(env(REMINDER_INTERVAL_MINUTES="29"))
     with pytest.raises(ValueError):
-        load_config(env(TIMEZONE="Mars/Olympus"))
-    with pytest.raises(ValueError, match=r"DATA_MODE=ical arrives in v1\.0 \(M2\)"):
-        load_config(env(DATA_MODE="ical"))
-    with pytest.raises(ValueError):
-        load_config(env(QUIET_HOURS="25:00-08:00"))
-    with pytest.raises(ValueError):
-        load_config(env(CANVAS_BASE_URL="http://canvas.example.edu"))
+        load_config(env(MAX_USERS="0"))
+    with pytest.raises(ValueError, match="OWNER_TELEGRAM_ID"):
+        load_config(env(OWNER_TELEGRAM_ID="me"))
 
 
-def test_quiet_hours_off() -> None:
-    s = to_settings(load_config(env(QUIET_HOURS="off")))
-    assert s.quiet_start is None and s.quiet_end is None
+def test_empty_owner_means_pairing() -> None:
+    assert load_config(env(OWNER_TELEGRAM_ID="")).owner_telegram_id is None
+    assert load_config(env(OWNER_TELEGRAM_ID=" 42 ")).owner_telegram_id == 42
 
 
-def test_repr_hides_tokens() -> None:
+def test_repr_hides_secrets() -> None:
     cfg = load_config(env())
-    assert "1234~abc" not in repr(cfg) and "123:abc" not in repr(cfg)
+    assert KEY not in repr(cfg) and "123:abc" not in repr(cfg)
 
 
-def test_token_provider_rereads_file(tmp_path: Path) -> None:
-    f = tmp_path / "canvas_token"
-    f.write_text("first\n")
-    e = env(CANVAS_TOKEN="__unset__", CANVAS_TOKEN_FILE=str(f))
-    provider = token_provider(load_config(e), e)
-    assert provider() == "first"
-    f.write_text("second\n")
-    assert provider() == "second"
+def test_permission_error_names_the_fix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    f = tmp_path / "key"
+    f.write_text(KEY)
 
+    def deny(*_args: object, **_kwargs: object) -> str:
+        raise PermissionError
 
-def test_token_provider_uses_env_value_without_file() -> None:
-    e = env()
-    assert token_provider(load_config(e), e)() == "1234~abc"
-
-
-def test_hidden_courses() -> None:
-    cfg = load_config(env(HIDE_COURSES=" PE 100, 4521 ,,"))
-    assert hidden_courses(cfg) == frozenset({"PE 100", "4521"})
-
-
-def test_validation_errors_never_echo_secrets() -> None:  # review I6
-    canvas = "4242~SENTINELsentinelSENTINELsentinel00"
-    telegram = "424242424:SENTINEL_sentinel_SENTINEL_sentinel_00"
-    with pytest.raises(ValueError) as info:
-        load_config(env(TIMEZONE="__unset__", CANVAS_TOKEN=canvas, TELEGRAM_BOT_TOKEN=telegram))
-    message = str(info.value)
-    assert "TIMEZONE" in message
-    for secret in (canvas, telegram):
-        for fragment in (secret[:8], secret[-8:]):
-            assert fragment not in message
-
-
-def test_unreadable_secret_file_explains_the_fix(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:  # review C2
-    f = tmp_path / "canvas_token"
-    f.write_text("abc")
-    original = Path.read_text
-
-    def denied(self: Path, *args: object, **kwargs: object) -> str:
-        if self == f:
-            raise PermissionError(13, "Permission denied", str(self))
-        return original(self, *args, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(Path, "read_text", denied)
-    with pytest.raises(ValueError, match=r"CANVAS_TOKEN_FILE can't be read.*chown 10001:10001"):
-        load_config(env(CANVAS_TOKEN="__unset__", CANVAS_TOKEN_FILE=str(f)))
-
-
-def test_grace_must_end_after_digest_time() -> None:  # review Minor 7 (re-graded)
-    with pytest.raises(ValueError, match="DIGEST_GRACE_UNTIL"):
-        load_config(env(DIGEST_TIME="08:00", DIGEST_GRACE_UNTIL="08:00"))
-    with pytest.raises(ValueError, match="DIGEST_GRACE_UNTIL"):
-        load_config(env(DIGEST_TIME="09:00", DIGEST_GRACE_UNTIL="07:00"))
-
-
-def test_empty_owner_id_means_unset() -> None:
-    assert load_config(env(TELEGRAM_OWNER_ID="")).telegram_owner_id is None
-    assert load_config(env(TELEGRAM_OWNER_ID=" 4242 ")).telegram_owner_id == 4242
+    monkeypatch.setattr(Path, "read_text", deny)
+    with pytest.raises(ValueError, match="10001"):
+        load_config(env(TOKEN_KEY="__unset__", TOKEN_KEY_FILE=str(f)))

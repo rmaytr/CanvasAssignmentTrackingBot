@@ -10,6 +10,7 @@ dependencies = [
     "httpx>=0.28,<0.29",
     "pydantic-settings>=2.16,<3",
     "tzdata>=2026.5",
+    "cryptography>=50,<51",
 ]
 
 [project.scripts]
@@ -52,7 +53,8 @@ extend-exclude = ["docs", "research_notes", "reports"]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "DTZ", "RUF", "ASYNC"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106", "S107"]
+"tests/**" = ["S101", "S105", "S106", "S107", "ASYNC240"]
+"src/canvas_tracker/render/copy.py" = ["S105"]  # message texts that mention "token"
 
 [tool.mypy]
 strict = true

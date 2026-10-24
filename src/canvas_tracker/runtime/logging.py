@@ -29,7 +29,12 @@ _STANDARD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None)))
 class RedactingFilter(logging.Filter):
     def __init__(self, secrets: Iterable[str]) -> None:
         super().__init__()
-        self._secrets = sorted({s for s in secrets if len(s) >= 4}, key=len, reverse=True)
+        self._secrets: list[str] = []
+        self.add(secrets)
+
+    def add(self, secrets: Iterable[str]) -> None:
+        merged = set(self._secrets) | {s for s in secrets if len(s) >= 4}
+        self._secrets = sorted(merged, key=len, reverse=True)
 
     def redact(self, text: str) -> str:
         for secret in self._secrets:
@@ -68,10 +73,21 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str, ensure_ascii=False)
 
 
+_FILTERS: list[RedactingFilter] = []
+
+
+def register_secret(secret: str) -> None:
+    """Redact a secret learned at runtime (a user's Canvas token) from every log line."""
+    for redacting in _FILTERS:
+        redacting.add([secret])
+
+
 def configure_logging(level: str, secrets: Iterable[str]) -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
-    handler.addFilter(RedactingFilter(secrets))
+    redacting = RedactingFilter(secrets)
+    _FILTERS[:] = [redacting]
+    handler.addFilter(redacting)
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)

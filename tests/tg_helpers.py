@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock
 from telegram import Bot, Update
 
 from canvas_tracker.bot.deps import BotDeps
-from canvas_tracker.bot.pairing import PairingCode
 from canvas_tracker.domain.models import Settings
 from tests.factories import NOW, make_settings
 from tests.store_helpers import new_store
@@ -75,8 +74,8 @@ def callback_update(data: str, user_id: int = 77, bot: AsyncMock | None = None) 
     return update
 
 
-def context(*args: str) -> Any:
-    return SimpleNamespace(args=list(args), bot_data={})
+def context(*args: str, bot: Any = None) -> Any:
+    return SimpleNamespace(args=list(args), bot_data={}, bot=bot)
 
 
 def make_deps(
@@ -89,7 +88,5 @@ def make_deps(
         settings=settings or make_settings(canvas_host="canvas.example.edu"),
         clock=clock,
         sync=AsyncMock(),
-        pairing=PairingCode(now=clock, on_new_code=lambda _code: None),
-        env_owner_id=owner,
         hidden_courses=frozenset(),
     )
