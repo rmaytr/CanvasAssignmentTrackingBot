@@ -1,15 +1,17 @@
-# Run with: docker compose up -d --build   (see docs/setup/run-mvp.md)
+# One shared bot for you and your friends. Set up with deploy/install.sh, or see
+# docs/setup/host-the-bot.md. Start: docker compose up -d --build
 services:
   bot:
-    image: canvas-tracker:dev
+    image: canvas-tracker:local
     build: .
     env_file: .env
     environment:
-      CANVAS_TOKEN_FILE: /run/secrets/canvas_token
       TELEGRAM_BOT_TOKEN_FILE: /run/secrets/telegram_bot_token
+      TOKEN_KEY_FILE: /run/secrets/token_key
+      DATA_DIR: /data
     secrets:
-      - canvas_token
       - telegram_bot_token
+      - token_key
     volumes:
       - data:/data
     restart: unless-stopped
@@ -20,6 +22,7 @@ services:
       - ALL
     security_opt:
       - "no-new-privileges:true"
+    mem_limit: 400m
     logging:
       driver: json-file
       options:
@@ -27,10 +30,10 @@ services:
         max-file: "3"
 
 secrets:
-  canvas_token:
-    file: ./secrets/canvas_token.txt
   telegram_bot_token:
     file: ./secrets/telegram_bot_token.txt
+  token_key:
+    file: ./secrets/token_key.txt  # encrypts everyone's Canvas tokens; back it up
 
 volumes:
   data:

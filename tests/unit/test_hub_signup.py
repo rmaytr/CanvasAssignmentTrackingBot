@@ -274,3 +274,55 @@ def test_digest_grace_stays_on_the_same_day() -> None:
     assert digest_grace_until(time(21, 30)) == time(23, 59)
     assert digest_grace_until(time(19, 59)) == time(23, 59)
     assert digest_grace_until(time(19, 58)) == time(23, 58)
+
+
+async def test_verify_reports_unreachable_and_non_canvas_sites(tmp_path: Path) -> None:
+    from collections.abc import Callable
+
+    import httpx
+
+    from canvas_tracker.hub.hub import Hub, Verification
+    from canvas_tracker.sources.canvas_client import CanvasClient
+
+    env = build_hub(tmp_path)
+
+    def make(
+        handler: Callable[[httpx.Request], httpx.Response],
+    ) -> Callable[[str, Callable[[], str]], CanvasClient]:
+        def factory(base: str, token: Callable[[], str]) -> CanvasClient:
+            async def no_sleep(_s: float) -> None:
+                return None
+
+            return CanvasClient(
+                base, token, transport=httpx.MockTransport(handler), sleep=no_sleep, max_retries=0
+            )
+
+        return factory
+
+    def down(_r: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("no route")
+
+    def html(_r: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>login</html>")
+
+    def flaky_planner(r: httpx.Request) -> httpx.Response:
+        if r.url.path.endswith("/profile"):
+            return httpx.Response(200, json={"time_zone": "Nowhere/Land"})
+        return httpx.Response(503)
+
+    base = "https://school.instructure.com"
+    hub: Hub = env.hub
+    hub.client_factory = make(down)
+    assert await hub.verify(base, GOOD_TOKEN) == Verification("unreachable")
+    hub.client_factory = make(html)
+    assert await hub.verify(base, GOOD_TOKEN) == Verification("not_canvas")
+    hub.client_factory = make(flaky_planner)
+    # an invalid zone from Canvas is dropped; a planner outage is reported
+    assert await hub.verify(base, GOOD_TOKEN) == Verification("no_planner", None)
+
+
+async def test_public_resolution_check() -> None:
+    from canvas_tracker.hub.hub import resolves_publicly
+
+    assert not await resolves_publicly("localhost")
+    assert not await resolves_publicly("does-not-exist.invalid")

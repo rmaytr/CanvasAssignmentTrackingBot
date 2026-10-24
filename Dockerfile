@@ -17,7 +17,7 @@ ENV PATH=/app/.venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PTB_TIMEDELTA=1 \
-    DB_PATH=/data/bot.db
+    DATA_DIR=/data
 COPY --from=build /app/.venv /app/.venv
 RUN mkdir -p /data && chown 10001:10001 /data
 USER 10001:10001

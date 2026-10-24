@@ -1,5 +1,7 @@
 # Canvas Assignment Tracker Bot: Product Requirements Document
 
+> **Update 2026-10-24:** the personal setup (one bot per person, configured through environment variables) is replaced by **friends mode**: one shared, invite-only bot with sign-up in the chat. See [`superpowers/specs/2026-10-24-friends-mode-design.md`](superpowers/specs/2026-10-24-friends-mode-design.md); it supersedes §7.6–7.8 and §12 where they differ.
+
 | | |
 |---|---|
 | **Status** | Draft v0.2. The owner's answers to Q1–Q4 are folded in. |

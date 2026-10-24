@@ -262,3 +262,16 @@ REMOVE_USAGE = "Usage: /remove N, where N is the number from /users."
 REMOVE_SELF = "You can't remove yourself. Use /disconnect if you want to leave."
 REMOVED = "Removed {name} and deleted their data."
 PAIRED_OWNER = "✅ You're the owner of this bot. Let's set up your own account first."
+
+# The command menu Telegram shows next to the message box (set at startup)
+BOT_COMMANDS = (
+    ("today", "What's due today"),
+    ("week", "The next 7 days"),
+    ("digest", "Send the morning list now"),
+    ("sync", "Check Canvas right now"),
+    ("status", "Last sync and next reminder"),
+    ("pause", "Pause reminders, e.g. /pause 3h"),
+    ("settings", "Time zone, times, Canvas token"),
+    ("help", "All commands"),
+    ("disconnect", "Delete everything about you"),
+)

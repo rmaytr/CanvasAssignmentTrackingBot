@@ -88,7 +88,14 @@ def run() -> int:
     )
     tasks: dict[str, asyncio.Task[None]] = {}
 
-    async def on_start(_app: Any) -> None:
+    async def on_start(application: Any) -> None:
+        from telegram import BotCommand
+        from telegram.error import TelegramError
+
+        from canvas_tracker.render.copy import BOT_COMMANDS
+
+        with contextlib.suppress(TelegramError):  # only the menu; the bot works without it
+            await application.bot.set_my_commands([BotCommand(c, d) for c, d in BOT_COMMANDS])
         hub.load()
         tasks["hub"] = asyncio.create_task(hub.run_forever())
         if hub.owner_id() is None:
