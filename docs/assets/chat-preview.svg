@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560" role="img" aria-labelledby="t d">
+  <title id="t">What the bot sends</title>
+  <desc id="d">Left: the ranked morning list with Done buttons. Right: a reminder for work due within 24 hours, with Done, Snooze and Open buttons.</desc>
+  <defs>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#b9c9b0" opacity="0.55"/>
+    </pattern>
+    <filter id="sh" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+    <style>
+      text { font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif; fill: #111827; }
+      .h { font-size: 15px; font-weight: 700; }
+      .b { font-size: 13.5px; }
+      .s { font-size: 12.5px; fill: #4b5563; }
+      .tier { font-size: 13px; font-weight: 700; letter-spacing: .4px; }
+      .btn { font-size: 13px; font-weight: 600; fill: #ffffff; text-anchor: middle; }
+      .time { font-size: 11px; fill: #6b7a5f; text-anchor: end; }
+      .cap { font-size: 13px; font-weight: 600; fill: #ffffff; text-anchor: middle; }
+    </style>
+  </defs>
+  <rect width="900" height="560" rx="22" fill="#cfdcc4"/>
+  <rect width="900" height="560" rx="22" fill="url(#dots)"/>
+
+  <!-- ===== Morning list ===== -->
+  <rect x="24" y="22" width="150" height="26" rx="13" fill="#000000" fill-opacity="0.28"/>
+  <text x="99" y="40" class="cap">8:00 AM · Morning list</text>
+
+  <g filter="url(#sh)">
+    <rect x="24" y="60" width="456" height="350" rx="14" fill="#ffffff"/>
+  </g>
+  <text x="42" y="88" class="h">Good morning! Tue, Oct 20</text>
+  <text x="42" y="110" class="s">1 urgent · 2 high · 3 later this week (synced 7:58 AM)</text>
+
+  <circle cx="48" cy="139" r="6" fill="#e2483d"/>
+  <text x="60" y="144" class="tier" style="fill:#b91c1c">URGENT</text>
+  <text x="42" y="168" class="b">1. CS 101 · <tspan fill="#2563eb" text-decoration="underline">Homework 4</tspan></text>
+  <text x="58" y="187" class="s">due today 11:59 PM (in 15 h) · ≈4% of grade · est. 2 h</text>
+
+  <circle cx="48" cy="216" r="6" fill="#f59e0b"/>
+  <text x="60" y="221" class="tier" style="fill:#b45309">HIGH</text>
+  <text x="42" y="245" class="b">2. HIST 210 · <tspan fill="#2563eb" text-decoration="underline">Essay draft</tspan></text>
+  <text x="58" y="264" class="s">due Thu 11:59 PM (in 2 d) · ≈12% of grade · est. 6 h</text>
+  <text x="58" y="282" class="s">start by Thu 2:00 PM</text>
+  <text x="42" y="306" class="b">3. MATH 221 · <tspan fill="#2563eb" text-decoration="underline">Quiz 7</tspan></text>
+  <text x="58" y="325" class="s">due Fri 9:00 AM (in 3 d) · ≈8% of grade · quiz · est. 1 h</text>
+
+  <circle cx="48" cy="354" r="6" fill="#eab308"/>
+  <text x="60" y="359" class="s" style="font-weight:600">MEDIUM / LOW: 3 items, next: BIO 110 · Lab 5 (Sat) → /week</text>
+  <text x="42" y="388" class="s">Done yesterday: 2</text>
+  <text x="462" y="398" class="time">8:00 AM</text>
+
+  <g>
+    <rect x="24" y="416" width="148" height="38" rx="10" fill="#5b8a52" fill-opacity="0.92"/>
+    <text x="98" y="440" class="btn">✓ 1</text>
+    <rect x="178" y="416" width="148" height="38" rx="10" fill="#5b8a52" fill-opacity="0.92"/>
+    <text x="252" y="440" class="btn">✓ 2</text>
+    <rect x="332" y="416" width="148" height="38" rx="10" fill="#5b8a52" fill-opacity="0.92"/>
+    <text x="406" y="440" class="btn">✓ 3</text>
+  </g>
+
+  <!-- ===== Reminder ===== -->
+  <rect x="512" y="22" width="190" height="26" rx="13" fill="#000000" fill-opacity="0.28"/>
+  <text x="607" y="40" class="cap">8:00 PM · Every 2 hours</text>
+
+  <g filter="url(#sh)">
+    <rect x="512" y="60" width="364" height="140" rx="14" fill="#ffffff"/>
+  </g>
+  <text x="530" y="88" class="h">Due within 24 hours: 1 not submitted</text>
+  <text x="530" y="120" class="b">1. CS 101 · <tspan fill="#2563eb" text-decoration="underline">Homework 4</tspan></text>
+  <text x="546" y="139" class="s">due today 11:59 PM · 3 h 59 m left</text>
+  <text x="858" y="188" class="time">8:00 PM</text>
+
+  <rect x="512" y="206" width="118" height="38" rx="10" fill="#5b8a52" fill-opacity="0.92"/>
+  <text x="571" y="230" class="btn">✓ Done 1</text>
+  <rect x="635" y="206" width="118" height="38" rx="10" fill="#5b8a52" fill-opacity="0.92"/>
+  <text x="694" y="230" class="btn">Snooze 2h</text>
+  <rect x="758" y="206" width="118" height="38" rx="10" fill="#5b8a52" fill-opacity="0.92"/>
+  <text x="817" y="230" class="btn">Open ↗</text>
+
+  <!-- overnight warning -->
+  <rect x="512" y="290" width="128" height="26" rx="13" fill="#000000" fill-opacity="0.28"/>
+  <text x="576" y="308" class="cap">11:30 PM</text>
+  <g filter="url(#sh)">
+    <rect x="512" y="326" width="364" height="96" rx="14" fill="#ffffff"/>
+  </g>
+  <text x="530" y="354" class="h">Due while you sleep:</text>
+  <text x="530" y="380" class="b">1. PHYS 140 · <tspan fill="#2563eb" text-decoration="underline">Problem set 6</tspan></text>
+  <text x="546" y="399" class="s">due Wed 3:00 AM · 3 h 30 m left</text>
+
+  <!-- user reply -->
+  <g filter="url(#sh)">
+    <rect x="700" y="444" width="176" height="44" rx="14" fill="#e1f7c9"/>
+  </g>
+  <text x="716" y="471" class="b" style="font-family: Menlo, Consolas, monospace">/pause 1h</text>
+  <text x="864" y="482" class="time">11:32 PM</text>
+  <g filter="url(#sh)">
+    <rect x="512" y="500" width="250" height="40" rx="14" fill="#ffffff"/>
+  </g>
+  <text x="528" y="525" class="b">Reminders paused until 12:32 AM.</text>
+</svg>

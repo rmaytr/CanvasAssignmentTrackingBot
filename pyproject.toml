@@ -1,10 +1,21 @@
 [project]
 name = "canvas-tracker"
-version = "0.1.0"
-description = "Self-hosted bot that turns your Canvas To Do list into a ranked morning digest and repeat reminders on Telegram."
+version = "0.2.0"
+description = "Telegram bot that turns Canvas LMS To Do lists into ranked morning briefings and submission-aware reminders, for a small invite-only group."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.13"
+keywords = ["canvas", "canvas-lms", "telegram-bot", "reminders", "students", "productivity"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Education",
+    "Typing :: Typed",
+]
 dependencies = [
     "python-telegram-bot>=22.8,<23",
     "httpx>=0.28,<0.29",
@@ -12,6 +23,12 @@ dependencies = [
     "tzdata>=2026.5",
     "cryptography>=50,<51",
 ]
+
+[project.urls]
+Homepage = "https://github.com/rmaytr/CanvasAssignmentTrackingBot"
+Documentation = "https://github.com/rmaytr/CanvasAssignmentTrackingBot/tree/HEAD/docs"
+Changelog = "https://github.com/rmaytr/CanvasAssignmentTrackingBot/blob/HEAD/CHANGELOG.md"
+Issues = "https://github.com/rmaytr/CanvasAssignmentTrackingBot/issues"
 
 [project.scripts]
 canvas-tracker = "canvas_tracker.__main__:main"
@@ -47,7 +64,7 @@ markers = ["slow: long-running simulation tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-extend-exclude = ["docs", "research_notes", "reports"]
+extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "S", "DTZ", "RUF", "ASYNC"]

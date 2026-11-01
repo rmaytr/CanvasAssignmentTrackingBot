@@ -1,9 +1,10 @@
-# M1 acceptance: personal MVP
+# Beta checklist
 
-Run this yourself, against your real Canvas account and Telegram, after
-following [`docs/setup/host-the-bot.md`](setup/host-the-bot.md). It checks the PRD §11.6
-items and the M1 exit criteria (PRD §15): **14 days with no duplicate
-messages, no false nags, and every digest on time.**
+Run these checks yourself, against real Canvas accounts and Telegram, after following the
+[hosting guide](hosting.md). They cover what automated tests can't: real schools, real
+phones and real time. The beta is done when the log shows **14 days with no duplicate
+messages, no false nags, and every morning list on time** (see
+[product requirements](../design/prd.md) §11.6 and §15).
 
 ## One-time checks
 
@@ -43,4 +44,4 @@ messages, no false nags, and every digest on time.**
 | | | | | | |
 | | | | | | |
 
-When the log shows 14 clean days, M1 is done and the M2 (public v1.0) plan can be written.
+When the log shows 14 clean days, the beta's exit criteria are met and planning for the public release can start.

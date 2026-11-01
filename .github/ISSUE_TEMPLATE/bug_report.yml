@@ -1,0 +1,43 @@
+name: Bug report
+description: Something the bot did (or didn't do) that looks wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Never paste a Canvas or Telegram token here.** For security problems, use [private reporting](https://github.com/rmaytr/CanvasAssignmentTrackingBot/security/advisories/new) instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did the bot send or do, and what did you expect instead?
+      placeholder: "The 2 PM reminder still listed Homework 4, which I submitted at 1:30 PM."
+    validations:
+      required: true
+  - type: textarea
+    id: when
+    attributes:
+      label: When, and in which time zone?
+      description: Exact times help a lot. Reminders depend on due dates, quiet hours and time zones.
+      placeholder: "Tue Oct 20, 2:00 PM, America/Chicago. Quiet hours 0:00–8:00."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Submit an assignment in Canvas
+        2. Wait for the next reminder
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (hosts only)
+      description: Output of `sudo docker compose logs --tail 100 bot`. Logs are redacted, but double-check before pasting.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown by `/status`.
+      placeholder: "0.2.0"

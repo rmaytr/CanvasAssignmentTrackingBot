@@ -1,4 +1,6 @@
-# Join the Canvas reminder bot
+# Joining guide
+
+> For students who got an invite link from whoever runs the bot.
 
 **Short version to send a friend** (with your invite link):
 

@@ -1,8 +1,10 @@
-# Host the bot for you and your friends
+# Hosting guide
+
+> Set up your own copy of the bot for you and your friends.
 
 You set this up **once**, in about 20 minutes. After that, friends join by tapping a
 link you send them; they never install anything (see
-[`friends-guide.md`](friends-guide.md)).
+[`joining.md`](joining.md)).
 
 What you need: a Telegram account, a Google account and a payment card (Google
 requires one to verify you; see "Cost" below).
@@ -71,7 +73,7 @@ Open your bot in Telegram and send:   /start K7M2QX9A
 ## 5. Invite friends
 
 Send `/invite` to the bot. It replies with a one-time link that expires in 7 days.
-Send that link to **one** friend, together with [`friends-guide.md`](friends-guide.md)
+Send that link to **one** friend, together with [`joining.md`](joining.md)
 (or the short message at its top). Make a new link for each friend.
 
 Owner commands:

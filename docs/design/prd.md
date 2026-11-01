@@ -1,13 +1,13 @@
 # Canvas Assignment Tracker Bot: Product Requirements Document
 
-> **Update 2026-10-24:** the personal setup (one bot per person, configured through environment variables) is replaced by **friends mode**: one shared, invite-only bot with sign-up in the chat. See [`superpowers/specs/2026-10-24-friends-mode-design.md`](superpowers/specs/2026-10-24-friends-mode-design.md); it supersedes §7.6–7.8 and §12 where they differ.
+> **Update 2026-10-24:** the personal setup (one bot per person, configured through environment variables) is replaced by **friends mode**: one shared, invite-only bot with sign-up in the chat. See [`friends-mode.md`](friends-mode.md); it supersedes §7.6–7.8 and §12 where they differ.
 
 | | |
 |---|---|
 | **Status** | Draft v0.2. The owner's answers to Q1–Q4 are folded in. |
 | **Date** | 2026-10-16 |
 | **Owner** | [@rmaytr](https://github.com/rmaytr) |
-| **Research behind it** | [`reports/Canvas assignment reminder bot.md`](../reports/Canvas%20assignment%20reminder%20bot.md) and its notes in [`research_notes/`](../research_notes/) |
+| **Research behind it** | [`../research/background-research.md`](../research/background-research.md) |
 
 Decisions in this document are tagged so you can tell where each one came from:
 

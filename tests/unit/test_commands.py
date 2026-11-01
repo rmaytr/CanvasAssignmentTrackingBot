@@ -53,4 +53,4 @@ async def test_status_command_mentions_version() -> None:
     deps = make_deps(owner=77)
     bot = mock_bot()
     await status_cmd(deps)(message_update("/status", bot=bot), context())
-    assert "0.1.0" in bot.send_message.await_args.kwargs["text"]
+    assert "0.2.0" in bot.send_message.await_args.kwargs["text"]

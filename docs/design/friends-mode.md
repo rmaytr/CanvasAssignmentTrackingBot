@@ -1,6 +1,6 @@
 # Friends mode: one shared bot for the owner and 5–10 invited friends
 
-Approved in chat on 2026-10-24. Supersedes the single-user setup of PRD §7.6–7.8
+Approved in chat on 2026-10-24. Supersedes the single-user setup of [PRD](prd.md) §7.6–7.8
 and §12 for the personal/friends stage; the public commercial launch (stronger
 protection, privacy policy, bigger server) is out of scope here.
 

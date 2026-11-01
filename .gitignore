@@ -20,3 +20,6 @@ secrets/
 
 # Spike raw output (scrub before committing anything)
 spike/out/
+
+# Local bot data when running outside Docker
+.data/

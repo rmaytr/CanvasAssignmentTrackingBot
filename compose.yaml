@@ -1,5 +1,5 @@
 # One shared bot for you and your friends. Set up with deploy/install.sh, or see
-# docs/setup/host-the-bot.md. Start: docker compose up -d --build
+# docs/guides/hosting.md. Start: docker compose up -d --build
 services:
   bot:
     image: canvas-tracker:local

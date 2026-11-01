@@ -134,7 +134,7 @@ async def test_headers_user_agent_and_fresh_token_each_request() -> None:
     sent = [c.request.headers for c in route.calls]
     assert [h["Authorization"] for h in sent] == ["Bearer first", "Bearer second"]
     assert all(h["User-Agent"] == USER_AGENT for h in sent)
-    assert USER_AGENT.startswith("CanvasAssignmentTrackingBot/0.1.0 (+https://github.com/")
+    assert USER_AGENT.startswith("CanvasAssignmentTrackingBot/0.2.0 (+https://github.com/")
 
 
 async def test_only_api_v1_paths_are_allowed() -> None:
