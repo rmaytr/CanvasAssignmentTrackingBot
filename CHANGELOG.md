@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 - Repository cleanup: a new README with diagrams, plus architecture, how-it-works, testing and security docs, contributor guides and issue templates.
-- Updated development-only dependencies (`filelock`, `virtualenv`) flagged by `pip-audit`.
+- Updated dependencies flagged by `pip-audit`: `certifi` (runtime, CA bundle), plus the dev-only `filelock` and `virtualenv`.
 
 ## [0.2.0] - 2026-10-24: Friends mode
 
