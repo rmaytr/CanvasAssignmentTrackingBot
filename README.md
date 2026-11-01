@@ -4,13 +4,32 @@
 
 <p align="center">
   <a href="https://github.com/rmaytr/CanvasAssignmentTrackingBot/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/rmaytr/CanvasAssignmentTrackingBot/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="Python 3.13 | 3.14" src="https://img.shields.io/badge/python-3.13%20%7C%203.14-3776AB?logo=python&logoColor=white">
   <img alt="Tests: 426" src="https://img.shields.io/badge/tests-426-2ea44f">
   <img alt="Coverage: 94%" src="https://img.shields.io/badge/coverage-94%25-2ea44f">
   <img alt="mypy: strict" src="https://img.shields.io/badge/mypy-strict-1f5082">
-  <a href="https://github.com/astral-sh/ruff"><img alt="Ruff" src="https://img.shields.io/badge/lint-ruff-d7ff64?logo=ruff&logoColor=black"></a>
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
-  <img alt="Status: private beta" src="https://img.shields.io/badge/status-private%20beta-orange">
+  <img alt="Status: private beta, 6 users" src="https://img.shields.io/badge/status-private%20beta%20%C2%B7%206%20users-orange">
+</p>
+
+<p align="center">
+  <img alt="Python 3.13 | 3.14" src="https://img.shields.io/badge/Python-3.13%20%7C%203.14-3776AB?logo=python&logoColor=white">
+  <img alt="asyncio" src="https://img.shields.io/badge/asyncio-concurrency-3776AB?logo=python&logoColor=white">
+  <img alt="python-telegram-bot 22.8" src="https://img.shields.io/badge/python--telegram--bot-22.8-26A5E4?logo=telegram&logoColor=white">
+  <img alt="Telegram Bot API" src="https://img.shields.io/badge/Telegram-Bot%20API-26A5E4?logo=telegram&logoColor=white">
+  <img alt="Canvas LMS REST API" src="https://img.shields.io/badge/Canvas%20LMS-REST%20API-E72429">
+  <img alt="httpx 0.28" src="https://img.shields.io/badge/httpx-0.28-0B7FAB">
+  <img alt="SQLite 3" src="https://img.shields.io/badge/SQLite-WAL-003B57?logo=sqlite&logoColor=white">
+  <img alt="Pydantic 2" src="https://img.shields.io/badge/Pydantic-2.14-E92063?logo=pydantic&logoColor=white">
+  <img alt="cryptography Fernet" src="https://img.shields.io/badge/cryptography-Fernet%20(AES%20%2B%20HMAC)-2B3137">
+  <br>
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white">
+  <img alt="Google Cloud" src="https://img.shields.io/badge/Google%20Cloud-Compute%20Engine-4285F4?logo=googlecloud&logoColor=white">
+  <img alt="GitHub Actions" src="https://img.shields.io/badge/GitHub%20Actions-CI-2088FF?logo=githubactions&logoColor=white">
+  <img alt="uv" src="https://img.shields.io/badge/uv-0.11-DE5FE9?logo=uv&logoColor=white">
+  <img alt="pytest 9" src="https://img.shields.io/badge/pytest-9.1-0A9EDC?logo=pytest&logoColor=white">
+  <img alt="Hypothesis" src="https://img.shields.io/badge/Hypothesis-property%20tests-6B4FBB">
+  <img alt="Ruff" src="https://img.shields.io/badge/Ruff-0.17-D7FF64?logo=ruff&logoColor=black">
+  <img alt="Bash" src="https://img.shields.io/badge/Bash-installer-4EAA25?logo=gnubash&logoColor=white">
 </p>
 
 <p align="center">
