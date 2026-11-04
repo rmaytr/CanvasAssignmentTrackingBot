@@ -10,6 +10,7 @@ from datetime import datetime
 
 from canvas_tracker.domain.models import Plan, Send, SendKind, Settings, Snapshot
 from canvas_tracker.planning.digest import plan_digest
+from canvas_tracker.planning.email import plan_email
 from canvas_tracker.planning.keys import auth_alert_key
 from canvas_tracker.planning.reminders import plan_alerts, plan_cycle
 from canvas_tracker.planning.timeutil import in_quiet
@@ -39,6 +40,9 @@ def plan(now: datetime, snap: Snapshot, settings: Settings) -> Plan:
         key = auth_alert_key(since)
         if key not in snap.sent_keys:
             sends.append(Send(key, SendKind.AUTH_ALERT))
+
+    if settings.email:
+        sends.extend(plan_email(now, snap, settings))
 
     return Plan(
         sends=tuple(sends), open_cycle_at=cycle.open_cycle_at, close_cycle=cycle.close_cycle

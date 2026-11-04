@@ -225,6 +225,15 @@ def remove_cmd(signup: Signup) -> Handler:
     return handler
 
 
+def email_cmd(signup: Signup) -> Handler:
+    async def handler(update: Update, context: Any) -> None:
+        user = _current(signup, update)
+        if user is not None:
+            await send_replies(update, await signup.email_command(user, _arg(context)))
+
+    return handler
+
+
 def register_handlers(app: Application[Any, Any, Any, Any, Any, Any], signup: Signup) -> None:
     # Updates run concurrently (one friend's slow Canvas mustn't stall the others), but
     # each user's own updates still run in order, so sign-up steps never interleave.
@@ -253,6 +262,7 @@ def register_handlers(app: Application[Any, Any, Any, Any, Any, Any], signup: Si
     ):
         app.add_handler(CommandHandler(name, serial(routed(signup, factory))))
     app.add_handler(CommandHandler("settings", serial(_simple(signup, signup.settings))))
+    app.add_handler(CommandHandler("email", serial(email_cmd(signup))))
     app.add_handler(CommandHandler("cancel", serial(_simple(signup, signup.cancel))))
     app.add_handler(
         CommandHandler("disconnect", serial(_simple(signup, lambda _u: signup.disconnect_prompt())))

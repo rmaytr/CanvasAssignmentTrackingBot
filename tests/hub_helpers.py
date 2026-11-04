@@ -15,7 +15,8 @@ from canvas_tracker.hub.hub import Hub
 from canvas_tracker.hub.registry import open_registry
 from canvas_tracker.hub.secretbox import SecretBox, generate_key
 from canvas_tracker.hub.signup import Signup
-from canvas_tracker.notify.base import FakeNotifier
+from canvas_tracker.notify.base import FakeNotifier, NotifyError
+from canvas_tracker.render.message import RenderedMessage
 from canvas_tracker.sources.canvas_client import CanvasClient
 from tests.factories import NOW
 
@@ -61,6 +62,30 @@ class FakeCanvas:
 
 
 @dataclass
+class Outbox:
+    """Fake email delivery: every email the bot sends, with its address."""
+
+    sent: list[tuple[str, RenderedMessage]] = field(default_factory=list)
+    fail: bool = False
+
+    def mailer(self, to: Callable[[], str | None]) -> FakeMailer:
+        return FakeMailer(self, to)
+
+
+class FakeMailer:
+    def __init__(self, outbox: Outbox, to: Callable[[], str | None]) -> None:
+        self.outbox = outbox
+        self.to = to
+
+    async def send(self, msg: RenderedMessage) -> int | None:
+        address = self.to()
+        if address is None or self.outbox.fail:
+            raise NotifyError("FakeMailFailure")
+        self.outbox.sent.append((address, msg))
+        return None
+
+
+@dataclass
 class HubEnv:
     hub: Hub
     signup: Signup
@@ -69,6 +94,7 @@ class HubEnv:
     notifiers: dict[int, FakeNotifier]
     data_dir: Path
     key: str
+    outbox: Outbox = field(default_factory=Outbox)
 
 
 def build_hub(
@@ -78,11 +104,13 @@ def build_hub(
     max_users: int = 25,
     public: Callable[[str], bool] = lambda _host: True,
     pairing: PairingCode | None = None,
+    email: bool = False,
 ) -> HubEnv:
     canvas = FakeCanvas()
     clock = Clock()
     notifiers: dict[int, FakeNotifier] = {}
     key = generate_key()
+    outbox = Outbox()
 
     def client_factory(base: str, token: Callable[[], str]) -> CanvasClient:
         async def no_sleep(_s: float) -> None:
@@ -114,8 +142,9 @@ def build_hub(
         max_users=max_users,
         owner_env_id=owner,
         pairing=pairing,
+        mailer_factory=outbox.mailer if email else None,
     )
-    return HubEnv(hub, Signup(hub), canvas, clock, notifiers, tmp_path, key)
+    return HubEnv(hub, Signup(hub), canvas, clock, notifiers, tmp_path, key, outbox)
 
 
 async def sign_up(

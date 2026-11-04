@@ -32,6 +32,12 @@ _UPDATABLE = frozenset(
         "digest_time",
         "quiet",
         "pending_base_url",
+        "email_sealed",
+        "email_pending_sealed",
+        "email_code_hash",
+        "email_code_expires_at",
+        "email_code_sent_at",
+        "email_code_attempts",
     }
 )
 
@@ -51,6 +57,12 @@ class User:
     quiet: str
     created_at: datetime
     pending_base_url: str | None = None
+    email_sealed: bytes | None = None
+    email_pending_sealed: bytes | None = None
+    email_code_hash: str | None = None
+    email_code_expires_at: datetime | None = None
+    email_code_sent_at: datetime | None = None
+    email_code_attempts: int = 0
 
 
 def _user(row: sqlite3.Row) -> User:
@@ -70,7 +82,23 @@ def _user(row: sqlite3.Row) -> User:
         quiet=row["quiet"],
         created_at=created,
         pending_base_url=row["pending_base_url"],
+        email_sealed=row["email_sealed"],
+        email_pending_sealed=row["email_pending_sealed"],
+        email_code_hash=row["email_code_hash"],
+        email_code_expires_at=from_db(row["email_code_expires_at"]),
+        email_code_sent_at=from_db(row["email_code_sent_at"]),
+        email_code_attempts=row["email_code_attempts"],
     )
+
+
+def _column(value: Any) -> Any:
+    if isinstance(value, time):
+        return value.strftime("%H:%M")
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, datetime):
+        return to_db(value)
+    return value
 
 
 def _hash(code: str) -> str:
@@ -114,12 +142,7 @@ class Registry:
         unknown = set(fields) - _UPDATABLE
         if unknown:
             raise ValueError(f"unknown user fields: {sorted(unknown)}")
-        values = {
-            k: (
-                v.strftime("%H:%M") if isinstance(v, time) else int(v) if isinstance(v, bool) else v
-            )
-            for k, v in fields.items()
-        }
+        values = {k: _column(v) for k, v in fields.items()}
         assignments = ", ".join(f"{k} = ?" for k in values)
         self.conn.execute(
             f"UPDATE users SET {assignments} WHERE telegram_id = ?",  # noqa: S608 - checked keys

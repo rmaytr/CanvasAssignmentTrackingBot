@@ -199,6 +199,8 @@ gantt
 | 🌙 *Due while you sleep* | 30 minutes before quiet hours start, if anything is due during them |
 | ⏰ *Snooze over* | When a 💤 snooze ends and the item is still open |
 | ❗ *Now overdue* | **Once**, within 2 hours after the deadline. It says whether Canvas still accepts the work |
+| 📧 *Email: morning list* | Only with `/email` on: a copy of the morning list, in the same window as the Telegram one |
+| 📧 *Email: due in 2 hours* | Only with `/email` on: one email per deadline, 2 hours before it; items due at the same instant share one email. Waits out quiet hours and `/pause`; never sent after the deadline or for work that's done, stopped or gone |
 | 🔑 *Canvas rejected your token* | Once, when the token stops working, with steps to replace it via `/settings` |
 
 ## 6. Quiet hours, snooze, pause and overdue

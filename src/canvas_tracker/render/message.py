@@ -27,3 +27,4 @@ class Button:
 class RenderedMessage:
     text: str
     keyboard: tuple[tuple[Button, ...], ...] = ()
+    subject: str = ""  # email only; Telegram ignores it

@@ -17,7 +17,7 @@ from canvas_tracker.bot.pairing import PairingCode
 from canvas_tracker.hub.parsing import is_public_address
 from canvas_tracker.hub.registry import HUB_LAST_TICK_AT, OWNER_KEY, Registry, User
 from canvas_tracker.hub.secretbox import SecretBox
-from canvas_tracker.hub.tenant import ClientFactory, Tenant, user_db_path
+from canvas_tracker.hub.tenant import ClientFactory, MailerFactory, Tenant, user_db_path
 from canvas_tracker.notify.base import Notifier
 from canvas_tracker.runtime.loop import next_tick_delay
 from canvas_tracker.sources.canvas_client import (
@@ -80,6 +80,7 @@ class Hub:
         max_users: int = 25,
         owner_env_id: int | None = None,
         pairing: PairingCode | None = None,
+        mailer_factory: MailerFactory | None = None,
     ) -> None:
         self.registry = registry
         self.box = box
@@ -93,6 +94,7 @@ class Hub:
         self.max_users = max_users
         self.owner_env_id = owner_env_id
         self.pairing = pairing
+        self.mailer_factory = mailer_factory
         self.tenants: dict[int, Tenant] = {}
         self.broken: set[int] = set()
 
@@ -117,6 +119,7 @@ class Hub:
             clock=self.clock,
             client_factory=self.client_factory,
             item_retention=self.item_retention,
+            mailer_factory=self.mailer_factory,
         )
 
     def load(self) -> list[int]:

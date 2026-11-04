@@ -85,6 +85,9 @@ unreadable; if you really want that, run again with CANVAS_BOT_NEW_KEY=yes."
   head -c 32 /dev/urandom | base64 | tr '+/' '-_' > "$SECRETS/token_key.txt"
 fi
 
+# Optional email (see docs/guides/hosting.md): compose needs the file, empty means off.
+sudo test -e "$SECRETS/smtp_password.txt" || sudo touch "$SECRETS/smtp_password.txt"
+
 # The bot runs as user 10001 inside its container and must be able to read these.
 sudo chown 10001:10001 "$SECRETS"/*.txt
 sudo chmod 600 "$SECRETS"/*.txt

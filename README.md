@@ -137,6 +137,7 @@ You need a Telegram account and an always-on Linux server (Google Cloud's free t
 | `/sync` · `/status` | Check Canvas now · last sync, token health, next list and reminder |
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
 | `/settings` | Time zone, morning time, quiet hours, Canvas token or address |
+| `/email you@school.edu` | Also email the morning list and a heads-up 2 h before each deadline (`/email off` stops it) |
 | `/disconnect` | Delete everything the bot knows about you |
 | `/invite` · `/users` · `/remove N` | *Owner only:* invite links, user health (never anyone's assignments), removal |
 
@@ -224,7 +225,7 @@ Canvas tokens are as powerful as a password, so the bot treats them that way:
 │   ├── sources/     # read-only Canvas REST client, Planner and enrichment mappers
 │   ├── store/       # SQLite repository and migrations (one file per user)
 │   ├── runtime/     # tick loop, sync scheduling, secret-redacting logs
-│   ├── notify/      # Telegram delivery
+│   ├── notify/      # Telegram and email (SMTP) delivery
 │   ├── bot/         # per-user commands and buttons
 │   └── hub/         # multi-user layer: registry, encryption, sign-up, routing
 ├── tests/           # unit · property · integration · simulation · contract
@@ -242,7 +243,8 @@ Canvas tokens are as powerful as a password, so the bot treats them that way:
 - [ ] Beta feedback: tune ranking thresholds on real use; contract tests on scrubbed real Canvas data
 - [ ] **Calendar-feed mode** for schools that block personal tokens (no token needed)
 - [ ] OAuth with participating schools and stronger protection for a public release (per-user key wrapping, rate limiting, monitoring)
-- [ ] Email copy of the morning list, per-user reminder rhythm, localization (all copy already lives in one module)
+- [x] Optional email: the morning list and a heads-up 2 hours before each deadline (any SMTP provider)
+- [ ] Per-user reminder rhythm, localization (all copy already lives in one module)
 
 ## Documentation
 

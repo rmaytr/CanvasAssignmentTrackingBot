@@ -9,11 +9,13 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from canvas_tracker.domain.models import FRESHNESS, Settings
+from canvas_tracker.domain.models import EMAIL_KINDS, FRESHNESS, Send, Settings, Snapshot
 from canvas_tracker.notify.base import Notifier, NotifyError
 from canvas_tracker.planning.plan import plan
 from canvas_tracker.planning.timeutil import in_quiet
 from canvas_tracker.render.alerts import render_send
+from canvas_tracker.render.email import render_email
+from canvas_tracker.render.message import RenderedMessage
 from canvas_tracker.runtime.sync import SyncOutcome, enrichment_due, sync_due
 from canvas_tracker.store.repo import (
     AUTH_FAILED_SINCE,
@@ -63,10 +65,12 @@ class Runtime:
         token: Callable[[], str],
         hidden_courses: frozenset[str] = frozenset(),
         item_retention: timedelta = timedelta(days=30),
+        mailer: Notifier | None = None,
     ) -> None:
         self.store = store
         self.sync = sync
         self.notifier = notifier
+        self.mailer = mailer
         self.settings = settings
         self.clock = clock
         self.can_send = can_send
@@ -139,14 +143,17 @@ class Runtime:
 
         if self.can_send():
             for send in result.sends:
+                channel = self.mailer if send.kind in EMAIL_KINDS else self.notifier
+                if channel is None:
+                    continue
                 if not self.store.claim(send.key, send.kind, send.item_refs, now):
                     continue
-                messages = render_send(send, snap, now, self.settings, stale=stale)
+                messages = self._render(send, snap, now, stale)
                 done = self.store.parts_sent(send.key)  # resume a partly delivered split
                 try:
                     first_id: int | None = None
                     for index in range(done, len(messages)):
-                        message_id = await self.notifier.send(messages[index])
+                        message_id = await channel.send(messages[index])
                         self.store.mark_part_sent(send.key, index + 1)
                         first_id = message_id if first_id is None else first_id
                 except NotifyError as exc:
@@ -161,6 +168,14 @@ class Runtime:
         if last_purge is None or now - last_purge >= PURGE_EVERY:
             self.store.purge(now, self.item_retention)
             self.store.set_time(LAST_PURGE_AT, now)
+
+    def _render(
+        self, send: Send, snap: Snapshot, now: datetime, stale: bool
+    ) -> list[RenderedMessage]:
+        if send.kind in EMAIL_KINDS:
+            email = render_email(send, snap, now, self.settings, stale=stale)
+            return [] if email is None else [email]
+        return render_send(send, snap, now, self.settings, stale=stale)
 
     async def run_forever(self, interval_s: float = 60.0) -> None:
         while True:

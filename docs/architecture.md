@@ -53,7 +53,7 @@ flowchart TD
     runtime --> sources
     runtime --> notify
     runtime --> store
-    notify["notify<br/>Telegram delivery"] --> render
+    notify["notify<br/>Telegram and email delivery"] --> render
     render["render<br/>messages · keyboards · copy"] --> domain
     planning["planning<br/>digest · reminders · alerts · keys"] --> domain
     sources["sources<br/>Canvas client · Planner · enrichment"] --> domain
@@ -84,7 +84,7 @@ It takes the current time, a snapshot of one user's data and that user's setting
 | `sources` | `canvas_client`, `planner`, `enrichment` | Hardened read-only Canvas client; JSON → domain mapping |
 | `store` | `db`, `repo`, `migrations/` | SQLite (WAL) per user; send claims; column ownership per data source |
 | `runtime` | `loop`, `sync`, `logging` | Minute-aligned tick; sync cadence and error state; JSON logs with redaction |
-| `notify` | `base`, `telegram` | `Notifier` protocol; Telegram delivery with `RetryAfter` handling |
+| `notify` | `base`, `telegram`, `email` | `Notifier` protocol; Telegram delivery with `RetryAfter` handling; SMTP email (stdlib, in a worker thread) |
 | `bot` | `commands`, `callbacks`, `pairing`, `deps` | `/today` `/week` `/digest` `/sync` `/status` `/pause`; ✅/💤/↩️/🔕 buttons; owner pairing code |
 | `hub` | `hub`, `tenant`, `registry`, `secretbox`, `signup`, `parsing`, `handlers`, `migrations/` | Everything multi-user |
 

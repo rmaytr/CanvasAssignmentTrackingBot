@@ -36,6 +36,11 @@ That's it: "✅ All set!".
 - **Reminders**: every 2 hours while something is due within 24 hours and not
   submitted. Submitting in Canvas stops them by themselves (within about 10
   minutes). Buttons: ✅ Done, 💤 2h snooze, 🔗 open in Canvas.
+- **Email (optional, if the person running the bot set it up)**: send
+  `/email you@school.edu`, then send back the 6-digit code from the email. You then
+  also get the morning list by email, and one email 2 hours before each deadline.
+  Assignments due at the same time come in one email. Like reminders, it waits until
+  your quiet hours end, and it doesn't come while reminders are paused.
 - **Commands** (also in the menu next to the message box):
 
 | Command | What it does |
@@ -46,6 +51,7 @@ That's it: "✅ All set!".
 | `/sync` | Check Canvas right now |
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
 | `/settings` | Change time zone, morning time, quiet hours, Canvas token or Canvas address |
+| `/email you@school.edu` | Also get the morning list by email, plus a heads-up 2 hours before each deadline (`/email off` stops it) |
 | `/disconnect` | Delete everything the bot knows about you |
 
 ## Your data
@@ -56,5 +62,7 @@ That's it: "✅ All set!".
 - Canvas tokens are as powerful as your password and skip Duo. If you stop using the
   bot, send `/disconnect` **and** delete the token in Canvas (*Account → Settings →
   Approved Integrations*).
+- If you turn on email, your address is stored encrypted too, and only after you
+  confirm it with the code. `/email off` or `/disconnect` deletes it.
 - If Canvas ever rejects the token (for example, it expired), the bot sends a 🔑
   message: make a new token and paste it via `/settings → 🔑 Canvas token`.

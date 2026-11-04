@@ -47,12 +47,13 @@ def run() -> int:
     from telegram.ext import Application
 
     from canvas_tracker.bot.pairing import PairingCode
-    from canvas_tracker.config import base_settings, load_config
+    from canvas_tracker.config import base_settings, load_config, smtp_config
     from canvas_tracker.hub.handlers import register_handlers
     from canvas_tracker.hub.hub import Hub
     from canvas_tracker.hub.registry import open_registry
     from canvas_tracker.hub.secretbox import SecretBox
     from canvas_tracker.hub.signup import Signup
+    from canvas_tracker.notify.email import SmtpMailer
     from canvas_tracker.notify.telegram import TelegramNotifier
     from canvas_tracker.runtime.logging import configure_logging
 
@@ -62,7 +63,11 @@ def run() -> int:
         print(f"configuration error: {exc}", file=sys.stderr)
         return 2
     bot_token = cfg.telegram_bot_token.get_secret_value()
-    configure_logging(cfg.log_level, [bot_token, cfg.token_key.get_secret_value()])
+    smtp = smtp_config(cfg)
+    secrets = [bot_token, cfg.token_key.get_secret_value()]
+    if smtp is not None and smtp.password:
+        secrets.append(smtp.password)
+    configure_logging(cfg.log_level, secrets)
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     registry = open_registry(cfg.data_dir / "registry.db")
 
@@ -85,6 +90,7 @@ def run() -> int:
         max_users=cfg.max_users,
         owner_env_id=cfg.owner_telegram_id,
         pairing=pairing,
+        mailer_factory=None if smtp is None else (lambda to: SmtpMailer(smtp, to)),
     )
     tasks: dict[str, asyncio.Task[None]] = {}
 

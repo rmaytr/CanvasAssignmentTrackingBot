@@ -80,6 +80,7 @@ HELP = "\n".join(
         "/status: last sync, token state, next list and reminder",
         "/pause 3h | 30m | until 18:00 | off: pause reminders",
         "/settings: time zone, morning time, quiet hours, Canvas token or address",
+        "/email you@school.edu | off: also get the morning list and deadline emails",
         "/disconnect: delete everything the bot knows about you",
         "/help: this list",
     ]
@@ -226,8 +227,9 @@ SETTINGS = (
     "Canvas: {host}\n"
     "Time zone: {tz}\n"
     "Morning list: {digest}\n"
-    "Quiet hours: {quiet}\n\n"
-    "Tap what you'd like to change."
+    "Quiet hours: {quiet}\n"
+    "Email: {email}\n\n"
+    "Tap what you'd like to change. /email changes the email address."
 )
 BTN_SET_TZ = "🌎 Time zone"
 BTN_SET_DIGEST = "☀️ Morning time"
@@ -303,6 +305,53 @@ BOT_COMMANDS = (
     ("status", "Last sync and next reminder"),
     ("pause", "Pause reminders, e.g. /pause 3h"),
     ("settings", "Time zone, times, Canvas token"),
+    ("email", "Get emails too, e.g. /email you@school.edu"),
     ("help", "All commands"),
     ("disconnect", "Delete everything about you"),
+)
+
+# Email: the /email command
+EMAIL_OFF_LABEL = "off"
+EMAIL_UNAVAILABLE = "Email isn't set up on this bot. Ask the person who runs it."
+EMAIL_STATUS_ON = (
+    "📧 Emails go to {address}: the morning list, and a heads-up 2 hours before each "
+    "deadline.\nChange it with /email new@address, or stop with /email off."
+)
+EMAIL_STATUS_OFF = (
+    "📧 I can also email you the morning list, and a heads-up 2 hours before each "
+    "deadline (assignments due at the same time come in one email).\n"
+    "Send /email followed by your address, for example /email you@school.edu."
+)
+EMAIL_INVALID = "That doesn't look like an email address. Try /email you@school.edu."
+EMAIL_CODE_SENT = (
+    "📨 I sent a 6-digit code to {address}. Send it here as /email 123456 within "
+    "15 minutes. Check your spam folder if it isn't there in a minute."
+)
+EMAIL_SEND_FAILED = "I couldn't send the email. Check the address, or try again later."
+EMAIL_WAIT = "I just sent a code. Wait a minute before asking for another one."
+EMAIL_NO_PENDING = "There's no code waiting. Send /email you@school.edu first."
+EMAIL_CODE_WRONG = "That code isn't right. Check the email and try again."
+EMAIL_CODE_EXPIRED = "That code has expired. Send /email you@school.edu for a new one."
+EMAIL_CODE_LOCKED = "Too many wrong codes. Send /email you@school.edu for a new one."
+EMAIL_VERIFIED = (
+    "✅ Email confirmed. You'll get the morning list and a heads-up 2 hours before each "
+    "deadline at {address}. Telegram messages keep coming as before."
+)
+EMAIL_TURNED_OFF = "📭 Emails are off and your address is deleted."
+EMAIL_ALREADY_OFF = "Emails are already off."
+
+# Email: the messages themselves
+EMAIL_CODE_SUBJECT = "Your code: {code}"
+EMAIL_CODE_BODY = (
+    "Your confirmation code is <b>{code}</b>.\n\n"
+    "Send /email {code} to the Telegram bot within 15 minutes. If you didn't ask for "
+    "this, ignore this email and nothing will be sent to you."
+)
+EMAIL_DIGEST_SUBJECT = "☀️ Your list for {date}"
+EMAIL_DEADLINE_SUBJECT_ONE = "⏰ Due at {time}: {title}"
+EMAIL_DEADLINE_SUBJECT_MANY = "⏰ {count} assignments due at {time}"
+EMAIL_DEADLINE_HEADER = "⏰ Due {when} ({left} left):"
+EMAIL_FOOTER = (
+    "You get these emails because you asked the Telegram bot for them. "
+    "Send /email off to the bot to stop."
 )

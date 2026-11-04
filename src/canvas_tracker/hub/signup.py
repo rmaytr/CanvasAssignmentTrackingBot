@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 from canvas_tracker.bot.pairing import ALPHABET, CODE_LENGTH, PairingResult
+from canvas_tracker.hub.email import EmailSetup
 from canvas_tracker.hub.hub import Hub
 from canvas_tracker.hub.parsing import (
     looks_like_token,
@@ -134,6 +135,7 @@ class Signup:
     def __init__(self, hub: Hub) -> None:
         self.hub = hub
         self.registry = hub.registry
+        self.email = EmailSetup(hub)
 
     # --- prompts -------------------------------------------------------------
 
@@ -363,8 +365,14 @@ class Signup:
             tz=user.tz,
             digest=fmt_time(user.digest_time or time(8, 0)),
             quiet=fmt_quiet(user.quiet),
+            email=self.email.address(user) or copy.EMAIL_OFF_LABEL,
         )
         return [Reply(text, settings_keyboard())]
+
+    async def email_command(self, user: User, arg: str | None) -> list[Reply]:
+        if user.status != "active":
+            return [Reply(copy.FINISH_SIGNUP_FIRST), *self.prompt(user)]
+        return [Reply(text) for text in await self.email.command(user, arg)]
 
     def begin_edit(self, user: User, what: str) -> list[Reply]:
         steps = {

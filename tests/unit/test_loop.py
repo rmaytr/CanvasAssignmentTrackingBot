@@ -244,3 +244,23 @@ def test_ticks_align_to_one_second_past_each_minute() -> None:  # review Minor 1
     assert next_tick_delay(datetime(2026, 10, 20, 16, 0, 30, tzinfo=NOW.tzinfo)) == 31.0
     assert next_tick_delay(datetime(2026, 10, 20, 16, 0, 59, 500000, tzinfo=NOW.tzinfo)) == 1.5
     assert next_tick_delay(datetime(2026, 10, 20, 16, 0, 1, tzinfo=NOW.tzinfo)) == 60.0
+
+
+async def test_email_sends_go_to_the_mailer_and_never_to_telegram() -> None:
+    due_soon = make_item(plannable_id=2, due_in=timedelta(hours=1))
+    runtime, _store, _sync, notifier, _clock = build(items=lambda _t: [due_soon])
+    runtime.settings = make_settings(email=True)
+    mailer = FakeNotifier()
+    runtime.mailer = mailer
+    await runtime.tick()
+    assert [m.subject for m in mailer.sent] == ["⏰ Due at 1:00 PM: Homework"]
+    assert all(not m.subject for m in notifier.sent) and notifier.sent
+
+
+async def test_email_sends_wait_while_there_is_no_mailer() -> None:
+    due_soon = make_item(plannable_id=2, due_in=timedelta(hours=1))
+    runtime, store, _sync, notifier, _clock = build(items=lambda _t: [due_soon])
+    runtime.settings = make_settings(email=True)
+    await runtime.tick()
+    assert not any(k.startswith("email:") for k in store.snapshot().sent_keys)
+    assert all(not m.subject for m in notifier.sent)

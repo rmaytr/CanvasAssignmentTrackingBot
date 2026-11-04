@@ -39,3 +39,11 @@ def overdue_key(item: Item) -> str:
 
 def auth_alert_key(since: datetime) -> str:
     return f"auth:{_ts(since)}"
+
+
+def email_digest_key(d: date) -> str:
+    return f"email:digest:{d.isoformat()}"
+
+
+def email_deadline_key(due_at: datetime) -> str:
+    return f"email:due:{_ts(due_at)}"

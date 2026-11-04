@@ -25,6 +25,7 @@ STALE_AFTER = timedelta(minutes=30)
 UNDO_WINDOW = timedelta(minutes=10)
 FRESHNESS = timedelta(minutes=5)
 MIN_REMINDER_INTERVAL = timedelta(minutes=30)
+EMAIL_DEADLINE_LEAD = timedelta(hours=2)
 
 
 def _check_utc(obj: object) -> None:
@@ -148,6 +149,7 @@ class Settings:
     overdue_reminders: bool = False
     overdue_reminder_max: timedelta = timedelta(hours=48)
     canvas_host: str = ""
+    email: bool = False  # a verified address and a configured mail server
 
     def __post_init__(self) -> None:
         try:
@@ -183,11 +185,14 @@ class SendKind(StrEnum):
     OVERNIGHT = "overnight"
     OVERDUE = "overdue"
     AUTH_ALERT = "auth_alert"
+    EMAIL_DIGEST = "email_digest"
+    EMAIL_DEADLINE = "email_deadline"
 
 
 REMINDER_KINDS = frozenset(
     {SendKind.DIGEST, SendKind.REMINDER, SendKind.NEW_URGENT, SendKind.SNOOZE_END}
 )
+EMAIL_KINDS = frozenset({SendKind.EMAIL_DIGEST, SendKind.EMAIL_DEADLINE})
 
 
 @dataclass(frozen=True, slots=True)

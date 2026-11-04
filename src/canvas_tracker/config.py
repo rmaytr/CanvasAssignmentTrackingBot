@@ -13,13 +13,17 @@ import os
 from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, ValidationError, field_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
+if TYPE_CHECKING:
+    from canvas_tracker.notify.email import SmtpConfig
+
 SECRET_FIELDS = ("telegram_bot_token", "token_key")
+OPTIONAL_SECRET_FIELDS = ("smtp_password",)
 
 
 def validate_base_url(url: str) -> str:
@@ -59,6 +63,47 @@ class AppConfig(BaseSettings):
     overdue_reminder_max_hours: int = Field(48, ge=1, le=336)
     item_retention_days: int = Field(30, ge=1)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # Email (optional): unset SMTP_HOST means the bot never sends email.
+    smtp_host: str | None = None
+    smtp_port: int = Field(587, ge=1, le=65535)
+    smtp_security: Literal["starttls", "tls"] = "starttls"
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    email_from: str | None = None
+    email_from_name: str = Field("Canvas Tracker", min_length=1, max_length=64)
+
+    @field_validator("smtp_host", "smtp_username", "email_from", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @field_validator("smtp_security", mode="before")
+    @classmethod
+    def _security(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator("email_from")
+    @classmethod
+    def _from(cls, value: str | None) -> str | None:
+        from canvas_tracker.notify.email import normalize_address
+
+        if value is None:
+            return None
+        address = normalize_address(value)
+        if address is None:
+            raise ValueError("must be a plain email address, e.g. bot@example.com")
+        return address
+
+    @model_validator(mode="after")
+    def _email_complete(self) -> AppConfig:
+        if self.smtp_host is not None:
+            if self.email_from is None:
+                raise ValueError("EMAIL_FROM is required when SMTP_HOST is set")
+            if (self.smtp_username is None) != (self.smtp_password is None):
+                raise ValueError("set both SMTP_USERNAME and SMTP_PASSWORD, or neither")
+        return self
 
     @classmethod
     def settings_customise_sources(
@@ -115,16 +160,41 @@ def _read_secret(env: Mapping[str, str], field: str) -> str:
     return direct.strip()
 
 
+def _read_optional_secret(env: Mapping[str, str], field: str) -> str | None:
+    """Like ``_read_secret``, but unset, blank or an empty file all mean "not set"
+    (compose always mounts secrets/smtp_password.txt, which is empty without email)."""
+    name = field.upper()
+    path = env.get(f"{name}_FILE")
+    if path is not None and env.get(name, "").strip():
+        raise ValueError(f"set {name} or {name}_FILE, not both")
+    if path is not None:
+        try:
+            if not Path(path).read_text(encoding="utf-8").strip():
+                return None
+        except FileNotFoundError:
+            return None
+        except PermissionError:
+            pass  # _read_secret explains how to fix it
+    elif not env.get(name, "").strip():
+        return None
+    without_blank = {k: v for k, v in env.items() if k != name or v.strip()}
+    return _read_secret(without_blank, field)
+
+
 def load_config(env: Mapping[str, str] | None = None) -> AppConfig:
     source = os.environ if env is None else env
     values: dict[str, object] = {
         field: source[field.upper()]
         for field in AppConfig.model_fields
-        if field not in SECRET_FIELDS and field.upper() in source
+        if field not in (*SECRET_FIELDS, *OPTIONAL_SECRET_FIELDS) and field.upper() in source
     }
     for field in SECRET_FIELDS:
         # Wrapped before validation, so no error message can ever echo a secret.
         values[field] = SecretStr(_read_secret(source, field))
+    for field in OPTIONAL_SECRET_FIELDS:
+        optional = _read_optional_secret(source, field)
+        if optional is not None:
+            values[field] = SecretStr(optional)
     try:
         return AppConfig(**values)  # type: ignore[arg-type]
     except ValidationError as exc:
@@ -144,3 +214,20 @@ def base_settings(cfg: AppConfig) -> dict[str, object]:
         "overdue_reminders": cfg.overdue_reminders,
         "overdue_reminder_max": timedelta(hours=cfg.overdue_reminder_max_hours),
     }
+
+
+def smtp_config(cfg: AppConfig) -> SmtpConfig | None:
+    """The mail server settings, or None when email isn't configured."""
+    from canvas_tracker.notify.email import SmtpConfig
+
+    if cfg.smtp_host is None or cfg.email_from is None:
+        return None
+    return SmtpConfig(
+        host=cfg.smtp_host,
+        port=cfg.smtp_port,
+        security=cfg.smtp_security,
+        username=cfg.smtp_username,
+        password=cfg.smtp_password.get_secret_value() if cfg.smtp_password else None,
+        sender=cfg.email_from,
+        sender_name=cfg.email_from_name,
+    )

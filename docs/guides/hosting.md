@@ -103,6 +103,36 @@ Connect to the server any time with `gcloud compute ssh canvas-bot --zone=us-cen
 The bot restarts by itself after a crash or a server reboot. Logs never contain
 anyone's tokens.
 
+## Optional: email
+
+People can also get the morning list by email, plus one email 2 hours before each
+deadline (`/email you@school.edu` in the chat, confirmed with a code). It works with
+any SMTP provider. You need an account with one:
+
+- **Brevo** (free, 300 emails a day). Best with a domain you own: verify the domain
+  in Brevo (*Senders, Domains & Dedicated IPs*) so mail isn't marked as spam. Under
+  *SMTP & API → SMTP*, create an SMTP key.
+  Host `smtp-relay.brevo.com`, port `587`, username = the SMTP login Brevo shows.
+- **Gmail** (free, about 500 a day, no domain needed). Make a new Google account for
+  the bot, turn on 2-Step Verification, then create an *App password*.
+  Host `smtp.gmail.com`, port `587`, username = the Gmail address.
+
+On the server:
+
+```sh
+cd ~/CanvasAssignmentTrackingBot
+read -rsp "SMTP password or key: " P && printf '%s' "$P" | sudo tee secrets/smtp_password.txt >/dev/null; unset P; echo
+nano .env   # fill in SMTP_HOST, SMTP_USERNAME and EMAIL_FROM (see .env.example)
+```
+
+Then run the install command again (it fixes file permissions and restarts the bot),
+or run `sudo docker compose up -d --force-recreate`. `EMAIL_FROM` must be an address
+your provider lets you send from: the Gmail address, or one on your verified domain.
+
+Test it by sending `/email` plus your own address to the bot. If the code doesn't
+arrive, check spam, then `sudo docker compose logs --tail 50 bot`. The logs show the
+kind of error (for example `SMTPAuthenticationError`) but never addresses or passwords.
+
 ## Keep the key safe
 
 `~/CanvasAssignmentTrackingBot/secrets/token_key.txt` encrypts everyone's Canvas
@@ -155,4 +185,6 @@ bot there, copy `secrets/` and the data back into place, and start it.
 | The pairing code expired | `cd ~/CanvasAssignmentTrackingBot && sudo docker compose restart bot`, then run the install command again to see the new code. |
 | `/start` does nothing | The bot only answers in a private chat with it, not in groups. Check it's running: `sudo docker compose ps` shows `healthy`. |
 | The log says a file "can't be read" | Run the install command again; it fixes the file permissions. |
+| `/email` says email isn't set up | `SMTP_HOST` is empty in `.env`. See *Optional: email*. |
+| `/email` says it couldn't send | Check `SMTP_USERNAME`, `secrets/smtp_password.txt` and `EMAIL_FROM`, then the log for the error kind. |
 | A friend's token stops working | They get a 🔑 message with steps; they paste a new token via `/settings`. `/users` shows who's affected. |

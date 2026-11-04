@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- **Optional email.** `/email you@school.edu` (confirmed with a 6-digit code sent to that address) adds an email copy of the morning list and one email 2 hours before each deadline. Assignments due at the same time share one email. Deadline emails wait out quiet hours and `/pause`, and are never sent after the deadline. `/email off` or `/disconnect` deletes the address. Telegram messages are unchanged.
+- Works with any SMTP provider (Brevo, Gmail, your own domain): `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, `EMAIL_FROM`, `EMAIL_FROM_NAME` in `.env`, with the password in `secrets/smtp_password.txt`. Email is off unless `SMTP_HOST` is set. See the hosting guide.
+
+### Security
+- Email addresses are stored Fernet-encrypted like Canvas tokens, and only after confirmation. Codes are stored hashed, expire after 15 minutes, lock after 5 wrong tries, and can be requested at most once a minute. SMTP errors are logged by class name only.
+
+### Upgrading
+- `compose.yaml` now mounts `secrets/smtp_password.txt`. Running the install command again creates it (empty means no email). If you update by hand, run `touch secrets/smtp_password.txt` first.
+
 ### Changed
 - Repository cleanup: a new README with diagrams, plus architecture, how-it-works, testing and security docs, contributor guides and issue templates.
 - Updated dependencies flagged by `pip-audit`: `certifi` (runtime, CA bundle), plus the dev-only `filelock` and `virtualenv`.

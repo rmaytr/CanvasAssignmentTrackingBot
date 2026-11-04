@@ -33,6 +33,7 @@ log = logging.getLogger(__name__)
 DEFAULT_DIGEST = time(8, 0)
 DIGEST_GRACE = timedelta(hours=4)
 ClientFactory = Callable[[str, Callable[[], str]], CanvasClient]
+MailerFactory = Callable[[Callable[[], str | None]], Notifier]
 
 
 def digest_grace_until(digest: time) -> time:
@@ -43,7 +44,7 @@ def digest_grace_until(digest: time) -> time:
     return time(minutes // 60, minutes % 60)
 
 
-def user_settings(user: User, shared: Mapping[str, object]) -> Settings:
+def user_settings(user: User, shared: Mapping[str, object], *, email: bool = False) -> Settings:
     if user.tz is None or user.canvas_base_url is None:
         raise ValueError("user hasn't finished signing up")
     digest = user.digest_time or DEFAULT_DIGEST
@@ -56,6 +57,7 @@ def user_settings(user: User, shared: Mapping[str, object]) -> Settings:
         quiet_start=start,
         quiet_end=end,
         canvas_host=urlsplit(user.canvas_base_url).hostname or "",
+        email=email,
         **shared,  # type: ignore[arg-type]
     )
 
@@ -77,6 +79,7 @@ class Tenant:
         clock: Callable[[], datetime],
         client_factory: ClientFactory,
         item_retention: timedelta,
+        mailer_factory: MailerFactory | None = None,
     ) -> None:
         assert user.canvas_base_url is not None  # noqa: S101 - only active users get a tenant
         self.telegram_id = user.telegram_id
@@ -85,8 +88,20 @@ class Tenant:
         conn = connect(path)
         migrate(conn)
         self.store = Store(conn)
-        self.settings = user_settings(user, shared)
         telegram_id = user.telegram_id
+        email = mailer_factory is not None and user.email_sealed is not None
+        self.settings = user_settings(user, shared, email=email)
+
+        def address() -> str | None:
+            current = registry.get_user(telegram_id)
+            if current is None or current.email_sealed is None:
+                return None
+            try:
+                return box.open(current.email_sealed)
+            except ValueError:
+                return None
+
+        mailer = mailer_factory(address) if email and mailer_factory is not None else None
 
         def token() -> str:
             current = registry.get_user(telegram_id)
@@ -110,6 +125,7 @@ class Tenant:
             can_send=lambda: True,
             token=token,
             item_retention=item_retention,
+            mailer=mailer,
         )
         self.deps = BotDeps(store=self.store, settings=self.settings, clock=clock, sync=self.sync)
         self._lock = asyncio.Lock()

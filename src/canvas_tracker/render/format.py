@@ -20,6 +20,15 @@ def escape(text: str) -> str:
     return html.escape(text, quote=True)
 
 
+SUBJECT_MAX = 150
+
+
+def clean_subject(text: str) -> str:
+    """One line, no control characters, short enough for any mail client."""
+    flat = " ".join("".join(c if c.isprintable() else " " for c in text).split())
+    return flat if len(flat) <= SUBJECT_MAX else flat[: SUBJECT_MAX - 1] + "…"
+
+
 def safe_link(url: str | None, canvas_host: str) -> str | None:
     """Return ``url`` only if it is HTTPS on the configured Canvas host."""
     if not url:

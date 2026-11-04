@@ -8,10 +8,12 @@ services:
     environment:
       TELEGRAM_BOT_TOKEN_FILE: /run/secrets/telegram_bot_token
       TOKEN_KEY_FILE: /run/secrets/token_key
+      SMTP_PASSWORD_FILE: /run/secrets/smtp_password
       DATA_DIR: /data
     secrets:
       - telegram_bot_token
       - token_key
+      - smtp_password
     volumes:
       - data:/data
     restart: unless-stopped
@@ -34,6 +36,8 @@ secrets:
     file: ./secrets/telegram_bot_token.txt
   token_key:
     file: ./secrets/token_key.txt  # encrypts everyone's Canvas tokens; back it up
+  smtp_password:
+    file: ./secrets/smtp_password.txt  # optional email; empty means no email
 
 volumes:
   data:
