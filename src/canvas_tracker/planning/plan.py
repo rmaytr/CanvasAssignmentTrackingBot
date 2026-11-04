@@ -12,6 +12,7 @@ from canvas_tracker.domain.models import Plan, Send, SendKind, Settings, Snapsho
 from canvas_tracker.planning.digest import plan_digest
 from canvas_tracker.planning.email import plan_email
 from canvas_tracker.planning.keys import auth_alert_key
+from canvas_tracker.planning.news import plan_news
 from canvas_tracker.planning.reminders import plan_alerts, plan_cycle
 from canvas_tracker.planning.timeutil import in_quiet
 
@@ -32,6 +33,8 @@ def plan(now: datetime, snap: Snapshot, settings: Settings) -> Plan:
         if alert.kind in _COVERABLE and set(alert.item_refs) <= covered:
             continue
         sends.append(alert)
+
+    sends.extend(plan_news(now, snap, settings))
 
     since = snap.auth_failed_since
     if since is not None and not in_quiet(

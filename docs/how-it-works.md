@@ -156,7 +156,7 @@ Each user gets one list per day at the time they choose (any time up to 8 PM), w
 | 🔴 URGENT · 🟠 HIGH | Numbered, each with a ✅ button and a one-line "why" (due, share, type, effort, start-by) |
 | 🟡 MEDIUM / ⚪ LOW | A single summary line with the next three items, pointing to `/week` |
 | ⚠️ OVERDUE | Work past due that Canvas still accepts, with the "accepted until" date |
-| 📅 Events today | Calendar events (shown, never nagged about) |
+| 📢 Announcements & events | Calendar events today, and announcements from the last 24 hours that weren't already sent on their own. Shown with links, never ranked, reminded or marked overdue |
 | ✅ Done yesterday | Count of items finished yesterday |
 
 ## 5. Reminders, hour by hour
@@ -198,7 +198,9 @@ gantt
 | 🆕 *Just posted and due soon* | New work that's due before the next reminder slot (it would otherwise be missed) |
 | 🌙 *Due while you sleep* | 30 minutes before quiet hours start, if anything is due during them |
 | ⏰ *Snooze over* | When a 💤 snooze ends and the item is still open |
-| ❗ *Now overdue* | **Once**, within 2 hours after the deadline. It says whether Canvas still accepts the work |
+| 📢 *New announcement* | Once per course announcement, when it's posted (after quiet hours or `/pause`). Posted overnight, it only appears in the morning list. Only an 🔗 Open button: there's nothing to submit |
+| 📅 *Event at …* | One heads-up an hour before a calendar event starts |
+| ❗ *Now overdue* | **Once**, within 2 hours after the deadline. It says whether Canvas still accepts the work. Never for announcements or events |
 | 📧 *Email: morning list* | Only with `/email` on: a copy of the morning list, in the same window as the Telegram one |
 | 📧 *Email: due in 2 hours* | Only with `/email` on: one email per deadline, 2 hours before it; items due at the same instant share one email. Waits out quiet hours and `/pause`; never sent after the deadline or for work that's done, stopped or gone |
 | 🔑 *Canvas rejected your token* | Once, when the token stops working, with steps to replace it via `/settings` |

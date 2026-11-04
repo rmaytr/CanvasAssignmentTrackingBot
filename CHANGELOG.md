@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Optional email.** `/email you@school.edu` (confirmed with a 6-digit code sent to that address) adds an email copy of the morning list and one email 2 hours before each deadline. Assignments due at the same time share one email. Deadline emails wait out quiet hours and `/pause`, and are never sent after the deadline. `/email off` or `/disconnect` deletes the address. Telegram messages are unchanged.
 - Works with any SMTP provider (Brevo, Gmail, your own domain): `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, `EMAIL_FROM`, `EMAIL_FROM_NAME` in `.env`, with the password in `secrets/smtp_password.txt`. Email is off unless `SMTP_HOST` is set. See the hosting guide.
 
+- **Announcements and events are no longer treated as homework.** A course announcement now gets one 📢 message when it's posted, a calendar event gets a 📅 heads-up an hour before it starts, and the morning list shows both under a new *Announcements & events* section. Neither is ever reminded, ranked or reported as overdue.
+
+### Fixed
+- Course announcements (and posts like "Attend the social this Thursday!") were reminded about and reported as ❗ overdue, because Canvas's `announcement` items were treated as assignments.
+
 ### Security
 - Email addresses are stored Fernet-encrypted like Canvas tokens, and only after confirmation. Codes are stored hashed, expire after 15 minutes, lock after 5 wrong tries, and can be requested at most once a minute. SMTP errors are logged by class name only.
 

@@ -67,7 +67,32 @@ def test_events_today_section() -> None:
         due_at=ny(20, 18, 0),
     )
     [msg] = render_digest(make_snapshot([event], last_successful_sync_at=DIGEST_NOW), DIGEST_NOW, S)
-    assert "📅 Events today\n• 6:00 PM · Midterm review" in msg.text
+    assert "📢 ANNOUNCEMENTS & EVENTS\n• 📅 6:00 PM · Midterm review" in msg.text
+
+
+def test_announcements_get_their_own_section_not_overdue() -> None:
+    from canvas_tracker.domain.models import ItemType
+
+    posted = make_item(
+        type=ItemType.ANNOUNCEMENT,
+        plannable_type="announcement",
+        title="Bytes and Bites social",
+        course_name="CS Advising",
+        due_at=DIGEST_NOW - timedelta(hours=3),
+    )
+    old = make_item(
+        type=ItemType.ANNOUNCEMENT,
+        plannable_type="announcement",
+        title="Last week's news",
+        due_at=DIGEST_NOW - timedelta(days=3),
+    )
+    snap = make_snapshot([posted, old], last_successful_sync_at=DIGEST_NOW)
+    [msg] = render_digest(snap, DIGEST_NOW, S)
+    assert (
+        "📢 ANNOUNCEMENTS & EVENTS\n• 📢 CS Advising · Bytes and Bites social (posted" in msg.text
+    )
+    assert "OVERDUE" not in msg.text and "Last week" not in msg.text
+    assert msg.keyboard == ()  # nothing to mark done
 
 
 class _TagBalance(HTMLParser):

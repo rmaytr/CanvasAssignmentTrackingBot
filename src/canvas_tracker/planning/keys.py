@@ -41,6 +41,14 @@ def auth_alert_key(since: datetime) -> str:
     return f"auth:{_ts(since)}"
 
 
+def announcement_key(item: Item) -> str:
+    return f"ann:{item.ref}"
+
+
+def event_soon_key(item: Item) -> str:
+    return f"evt:{item.ref}:{_ts(item.due_at)}"
+
+
 def email_digest_key(d: date) -> str:
     return f"email:digest:{d.isoformat()}"
 

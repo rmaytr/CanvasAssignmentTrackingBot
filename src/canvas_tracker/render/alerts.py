@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from canvas_tracker.domain.models import Item, Send, SendKind, Settings, Snapshot
 from canvas_tracker.render import copy
 from canvas_tracker.render.digest import render_digest
-from canvas_tracker.render.format import TELEGRAM_LIMIT, format_due, format_left
+from canvas_tracker.render.format import TELEGRAM_LIMIT, clock, format_due, format_left
 from canvas_tracker.render.items import default_stale, heading, link_for, stale_note, title_html
 from canvas_tracker.render.message import Button, RenderedMessage
 
@@ -90,6 +90,16 @@ def _overdue(item: Item, now: datetime, settings: Settings) -> RenderedMessage:
     return RenderedMessage(text, (tuple(row),) if row else ())
 
 
+def _news(send: Send, item: Item, snap: Snapshot, now: datetime, settings: Settings) -> str:
+    assert item.due_at is not None  # noqa: S101
+    title = heading(item, snap, settings.canvas_host)
+    if send.kind is SendKind.ANNOUNCEMENT:
+        return copy.ANNOUNCEMENT_NOTICE.format(heading=title)
+    return copy.EVENT_SOON_NOTICE.format(
+        time=clock(item.due_at, settings.zone), left=format_left(item.due_at - now), heading=title
+    )
+
+
 def render_send(
     send: Send, snap: Snapshot, now: datetime, settings: Settings, stale: bool | None = None
 ) -> list[RenderedMessage]:
@@ -104,6 +114,10 @@ def render_send(
     items = [by_ref[ref] for ref in send.item_refs if ref in by_ref and by_ref[ref].due_at]
     if not items:
         return []
+    if send.kind in (SendKind.ANNOUNCEMENT, SendKind.EVENT_SOON):
+        url = link_for(items[0], settings.canvas_host)
+        keyboard = ((Button(copy.BTN_OPEN, url=url),),) if url is not None else ()
+        return [RenderedMessage(_news(send, items[0], snap, now, settings), keyboard)]
     note = f"\n{stale_note(snap, now, settings)}" if stale else ""
     if send.kind is SendKind.OVERDUE:
         message = _overdue(items[0], now, settings)

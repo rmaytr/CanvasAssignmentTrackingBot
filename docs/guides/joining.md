@@ -36,6 +36,10 @@ That's it: "✅ All set!".
 - **Reminders**: every 2 hours while something is due within 24 hours and not
   submitted. Submitting in Canvas stops them by themselves (within about 10
   minutes). Buttons: ✅ Done, 💤 2h snooze, 🔗 open in Canvas.
+- **Announcements and events**: a 📢 message when a course posts an announcement,
+  and a 📅 heads-up an hour before a calendar event. They also appear in the morning
+  list under *Announcements & events*. They're never treated as homework, so no
+  reminders or "overdue" messages.
 - **Email (optional, if the person running the bot set it up)**: send
   `/email you@school.edu`, then send back the 6-digit code from the email. You then
   also get the morning list by email, and one email 2 hours before each deadline.

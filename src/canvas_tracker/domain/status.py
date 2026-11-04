@@ -7,7 +7,9 @@ from datetime import datetime
 from canvas_tracker.domain.done_rule import is_done
 from canvas_tracker.domain.models import OVERDUE_SECTION_MAX, Item, ItemType, Settings
 
-REMINDABLE_TYPES = frozenset(t for t in ItemType if t is not ItemType.EVENT)
+# Things to know about, not to do: never reminded, ranked, overdue or marked done.
+INFO_TYPES = frozenset({ItemType.EVENT, ItemType.ANNOUNCEMENT})
+REMINDABLE_TYPES = frozenset(t for t in ItemType if t not in INFO_TYPES)
 
 
 def hours_left(item: Item, now: datetime) -> float | None:
@@ -23,6 +25,8 @@ def _still_accepting(item: Item, now: datetime) -> bool:
 def is_overdue_accepting(item: Item, now: datetime) -> bool:
     """Past due, at most 7 days ago, not done, and Canvas still accepts it."""
     if item.due_at is None or item.gone_at is not None or is_done(item):
+        return False
+    if item.type in INFO_TYPES:
         return False
     return item.due_at <= now < item.due_at + OVERDUE_SECTION_MAX and _still_accepting(item, now)
 

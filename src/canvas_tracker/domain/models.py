@@ -26,6 +26,8 @@ UNDO_WINDOW = timedelta(minutes=10)
 FRESHNESS = timedelta(minutes=5)
 MIN_REMINDER_INTERVAL = timedelta(minutes=30)
 EMAIL_DEADLINE_LEAD = timedelta(hours=2)
+ANNOUNCEMENT_FRESH = timedelta(hours=24)  # announce posts at most this old; digest lists them
+EVENT_LEAD = timedelta(hours=1)
 
 
 def _check_utc(obj: object) -> None:
@@ -46,6 +48,7 @@ class ItemType(StrEnum):
     PAGE = "wiki_page"
     NOTE = "planner_note"
     EVENT = "calendar_event"
+    ANNOUNCEMENT = "announcement"
     OTHER = "other"
 
 
@@ -185,6 +188,8 @@ class SendKind(StrEnum):
     OVERNIGHT = "overnight"
     OVERDUE = "overdue"
     AUTH_ALERT = "auth_alert"
+    ANNOUNCEMENT = "announcement"
+    EVENT_SOON = "event_soon"
     EMAIL_DIGEST = "email_digest"
     EMAIL_DEADLINE = "email_deadline"
 

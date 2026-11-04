@@ -8,6 +8,8 @@ from canvas_tracker.domain.done_rule import is_done
 from canvas_tracker.domain.models import Item, ItemType, Settings, Snapshot
 from canvas_tracker.domain.priority import Score, Tier, score
 from canvas_tracker.domain.status import REMINDABLE_TYPES, is_overdue_accepting
+from canvas_tracker.planning.keys import announcement_key
+from canvas_tracker.planning.news import is_fresh_announcement
 from canvas_tracker.render import copy
 from canvas_tracker.render.format import clock, format_due, split_blocks
 from canvas_tracker.render.items import default_stale, heading, plain_heading, stale_banner
@@ -113,6 +115,14 @@ def render_digest(
         ),
         key=lambda i: (i.due_at, i.ref),
     )
+    announcements = sorted(
+        (
+            i
+            for i in snap.items
+            if is_fresh_announcement(i, now) and announcement_key(i) not in snap.sent_keys
+        ),
+        key=lambda i: (i.due_at, i.ref),
+    )
     yesterday = today - timedelta(days=1)
     done_yesterday = sum(
         1
@@ -166,14 +176,25 @@ def render_digest(
                     accepted=accepted,
                 )
             )
-    if events:
-        blocks += ["", copy.SECTION_EVENTS]
+    if events or announcements:
+        blocks += ["", copy.SECTION_NEWS]
         for item in events:
             assert item.due_at is not None  # noqa: S101
-            blocks.append(f"• {clock(item.due_at, tz)} · {plain_heading(item, snap)}")
+            blocks.append(
+                copy.NEWS_EVENT_LINE.format(
+                    time=clock(item.due_at, tz), heading=heading(item, snap, host)
+                )
+            )
+        for item in announcements:
+            assert item.due_at is not None  # noqa: S101
+            blocks.append(
+                copy.NEWS_ANNOUNCEMENT_LINE.format(
+                    heading=heading(item, snap, host), when=format_due(item.due_at, now, tz)
+                )
+            )
     if done_yesterday:
         blocks += ["", copy.DONE_YESTERDAY.format(count=done_yesterday)]
-    if fresh and not (urgent or high or rest or overdue or events):
+    if fresh and not (urgent or high or rest or overdue or events or announcements):
         blocks.append(copy.NOTHING_DUE.format(days=settings.digest_lookahead.days, synced=synced))
 
     buttons = [

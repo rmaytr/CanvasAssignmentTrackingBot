@@ -21,6 +21,7 @@ _TYPES = {
     "wiki_page": ItemType.PAGE,
     "planner_note": ItemType.NOTE,
     "calendar_event": ItemType.EVENT,
+    "announcement": ItemType.ANNOUNCEMENT,  # its date is when it was posted
     "assessment_request": ItemType.PEER_REVIEW,
     "peer_review_sub_assignment": ItemType.PEER_REVIEW,
 }
