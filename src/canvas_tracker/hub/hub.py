@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import shutil
 import socket
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -15,12 +16,14 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from canvas_tracker.bot.pairing import PairingCode
+from canvas_tracker.hub.monitor import DiskCheck, HealthReport, Monitor, Watched, WatchedMailer
 from canvas_tracker.hub.parsing import is_public_address
 from canvas_tracker.hub.ratelimit import RateLimiter
 from canvas_tracker.hub.registry import HUB_LAST_TICK_AT, OWNER_KEY, Registry, User
 from canvas_tracker.hub.secretbox import SecretBox
 from canvas_tracker.hub.tenant import ClientFactory, MailerFactory, Tenant, user_db_path
-from canvas_tracker.notify.base import Notifier
+from canvas_tracker.notify.base import Notifier, NotifyError
+from canvas_tracker.render.message import RenderedMessage
 from canvas_tracker.runtime.loop import next_tick_delay
 from canvas_tracker.sources.canvas_client import (
     CanvasAuthError,
@@ -29,6 +32,7 @@ from canvas_tracker.sources.canvas_client import (
     CanvasUnavailable,
 )
 from canvas_tracker.sources.planner import PLANNER_PATH
+from canvas_tracker.store.repo import AUTH_FAILED_SINCE, LAST_SUCCESSFUL_SYNC_AT, LAST_SYNC_ERROR
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +44,7 @@ TOKEN_CHECK_WINDOW = timedelta(minutes=15)
 MANUAL_SYNC_WINDOW = timedelta(minutes=1)
 FEEDBACK_PER_WINDOW = 5
 FEEDBACK_WINDOW = timedelta(hours=1)
+MONITOR_TIMEOUT_S = 30.0
 Problem = Literal["rejected", "unreachable", "not_canvas", "no_planner"]
 
 
@@ -121,6 +126,7 @@ class Hub:
         owner_env_id: int | None = None,
         pairing: PairingCode | None = None,
         mailer_factory: MailerFactory | None = None,
+        disk_usage: DiskCheck = shutil.disk_usage,
     ) -> None:
         self.registry = registry
         self.box = box
@@ -134,13 +140,25 @@ class Hub:
         self.max_users = max_users
         self.owner_env_id = owner_env_id
         self.pairing = pairing
-        self.mailer_factory = mailer_factory
+        self.monitor = Monitor(
+            clock=clock, registry=registry, data_dir=data_dir, disk_usage=disk_usage
+        )
+        self.mailer_factory = None if mailer_factory is None else self._watched(mailer_factory)
         self.tenants: dict[int, Tenant] = {}
         self.broken: set[int] = set()
         self.host_guard = HostGuard(host_check, clock)
         self.token_limiter = RateLimiter(TOKEN_CHECKS_PER_WINDOW, TOKEN_CHECK_WINDOW)
         self.sync_limiter = RateLimiter(1, MANUAL_SYNC_WINDOW)
         self.feedback_limiter = RateLimiter(FEEDBACK_PER_WINDOW, FEEDBACK_WINDOW)
+
+    def _watched(self, factory: MailerFactory) -> MailerFactory:
+        """Every email, the morning list and confirmation codes alike, reports to the
+        monitor whether it went out, so the owner hears when emails keep failing."""
+
+        def build(to: Callable[[], str | None]) -> Notifier:
+            return WatchedMailer(factory(to), self.monitor.record_email)
+
+        return build
 
     # --- owner ---------------------------------------------------------------
 
@@ -175,6 +193,7 @@ class Hub:
             mailer_factory=self.mailer_factory,
             host_check=host_ok,
             sync_wait=sync_wait,
+            on_send=self.monitor.record_send,
         )
 
     def load(self) -> list[int]:
@@ -270,6 +289,62 @@ class Hub:
         if ticks:
             await asyncio.wait(ticks, timeout=wait_s)
         self.registry.set_time(HUB_LAST_TICK_AT, self.clock())
+        try:
+            async with asyncio.timeout(MONITOR_TIMEOUT_S):
+                await self.watch()
+        except Exception:  # monitoring must never cost anyone their minute
+            log.exception("monitoring failed")
+
+    # --- monitoring ----------------------------------------------------------
+
+    def watched(self) -> list[Watched]:
+        """Each started user's name, ID and sync timestamps: all the monitor may see."""
+        names = {user.telegram_id: user.display_name for user in self.registry.active_users()}
+        found: list[Watched] = []
+        for telegram_id, tenant in list(self.tenants.items()):
+            store = tenant.store
+            found.append(
+                Watched(
+                    telegram_id=telegram_id,
+                    name=names.get(telegram_id, ""),
+                    last_ok=store.get_time(LAST_SUCCESSFUL_SYNC_AT),
+                    last_error=store.get_state(LAST_SYNC_ERROR),
+                    auth_failed=store.get_time(AUTH_FAILED_SINCE) is not None,
+                    tick_started_at=tenant.running_since,
+                )
+            )
+        return found
+
+    def _onboarding(self) -> int:
+        return sum(1 for user in self.registry.all_users() if user.status != "active")
+
+    async def _tell_owner(self, text: str) -> bool:
+        owner = self.owner_id()
+        if owner is None:
+            return False
+        try:
+            await self.notifier_factory(owner).send(RenderedMessage(text))
+        except NotifyError:
+            log.warning("owner alert could not be delivered")
+            return False
+        return True
+
+    async def watch(self) -> list[str]:
+        """Alert the owner about what started or cleared, and log the hourly summary."""
+        users = self.watched()
+        delivered = await self.monitor.check(users, self._tell_owner)
+        if self.monitor.summary_due():
+            self.monitor.summarize(users, onboarding=self._onboarding())
+        return delivered
+
+    def health(self) -> HealthReport:
+        return self.monitor.report(
+            self.watched(),
+            onboarding=self._onboarding(),
+            broken=len(self.broken),
+            last_tick=self.registry.get_time(HUB_LAST_TICK_AT),
+            email_configured=self.mailer_factory is not None,
+        )
 
     async def run_forever(self, interval_s: float = 60.0) -> None:
         while True:

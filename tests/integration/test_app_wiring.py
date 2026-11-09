@@ -156,6 +156,10 @@ async def test_full_flow_through_the_real_application(tmp_path: Path) -> None:
         assert fake.texts(1)[-1].startswith("👥 Users (2 of 25)")
         await send(5, "/users")
         assert fake.texts(5)[-1] == copy.OWNER_ONLY
+        await send(1, "/health")
+        assert fake.texts(1)[-1].startswith("🩺 Health")
+        await send(5, "/health")
+        assert fake.texts(5)[-1] == copy.OWNER_ONLY
 
         # feedback (even mid sign-up) reaches the owner through the hub's notifier
         await send(5, "/feedback Stuck on step 1!")

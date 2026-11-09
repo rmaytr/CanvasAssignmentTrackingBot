@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from canvas_tracker.bot.deps import BotDeps
-from canvas_tracker.domain.models import MIN_REMINDER_INTERVAL, Settings
+from canvas_tracker.domain.models import MIN_REMINDER_INTERVAL, SendKind, Settings
 from canvas_tracker.hub.parsing import quiet_window
 from canvas_tracker.hub.registry import Registry, User
 from canvas_tracker.hub.secretbox import SecretBox
@@ -104,6 +104,7 @@ class Tenant:
         mailer_factory: MailerFactory | None = None,
         host_check: Callable[[], Awaitable[bool]] | None = None,
         sync_wait: Callable[[], timedelta | None] | None = None,
+        on_send: Callable[[SendKind, bool], None] | None = None,
     ) -> None:
         assert user.canvas_base_url is not None  # noqa: S101 - only active users get a tenant
         self.telegram_id = user.telegram_id
@@ -155,6 +156,7 @@ class Tenant:
             token=token,
             item_retention=item_retention,
             mailer=mailer,
+            on_send=on_send,
         )
         self.deps = BotDeps(
             store=self.store,
@@ -165,8 +167,10 @@ class Tenant:
             email_available=mailer_factory is not None,
             email_address=address,
         )
+        self._clock = clock
         self._lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
+        self.tick_started_at: datetime | None = None
         self.closed = False
 
     @property
@@ -177,10 +181,16 @@ class Tenant:
     def running(self) -> asyncio.Task[None] | None:
         return self._task if self.busy else None
 
+    @property
+    def running_since(self) -> datetime | None:
+        """When the tick that is still running started (None when none is)."""
+        return self.tick_started_at if self.busy else None
+
     def start_tick(self) -> asyncio.Task[None] | None:
         """Run one tick in the background, unless the previous one is still going."""
         if self.closed or self.busy:
             return None
+        self.tick_started_at = self._clock()
         self._task = asyncio.create_task(self.tick())
         return self._task
 

@@ -60,6 +60,19 @@ def format_span(span: timedelta) -> str:
     return copy.SPAN_MINUTES.format(n=minutes)
 
 
+def format_bytes(size: int) -> str:
+    """A disk size: "512 MB", "1.5 GB", "20 GB" (powers of 1024)."""
+    value = float(max(0, size))
+    units = ("B", "KB", "MB", "GB", "TB")
+    index = 0
+    while value >= 1024 and index < len(units) - 1:
+        value /= 1024
+        index += 1
+    if index < 3 or value >= 10:
+        return f"{value:.0f} {units[index]}"
+    return f"{value:.1f} {units[index]}"
+
+
 def clock(instant: datetime, tz: ZoneInfo) -> str:
     local = instant.astimezone(tz)
     hour = local.hour % 12 or 12

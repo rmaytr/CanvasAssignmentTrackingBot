@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 
@@ -25,6 +25,27 @@ GOOD_TOKEN = "4242~GOODgoodGOODgoodGOODgood0000"
 OTHER_TOKEN = "4243~OTHERotherOTHERotherOTHER000"
 BAD_TOKEN = "4242~BADbadBADbadBADbadBADbad000"
 NO_PLANNER_TOKEN = "4242~NOPLANnoplanNOPLANnoplan000"
+
+
+class DiskReading(NamedTuple):
+    total: int
+    free: int
+
+
+@dataclass
+class FakeDisk:
+    """The data volume as the monitor sees it (plenty of room unless a test says not)."""
+
+    total: int = 100 * 1024**3
+    free: int = 50 * 1024**3
+    calls: int = 0
+    fail: bool = False
+
+    def __call__(self, _path: Path) -> DiskReading:
+        self.calls += 1
+        if self.fail:
+            raise OSError("disk check failed")
+        return DiskReading(self.total, self.free)
 
 
 class Clock:
@@ -96,6 +117,7 @@ class HubEnv:
     data_dir: Path
     key: str
     outbox: Outbox = field(default_factory=Outbox)
+    disk: FakeDisk = field(default_factory=FakeDisk)
 
 
 def build_hub(
@@ -106,12 +128,14 @@ def build_hub(
     public: Callable[[str], bool] = lambda _host: True,
     pairing: PairingCode | None = None,
     email: bool = False,
+    disk: FakeDisk | None = None,
 ) -> HubEnv:
     canvas = FakeCanvas()
     clock = Clock()
     notifiers: dict[int, FakeNotifier] = {}
     key = generate_key()
     outbox = Outbox()
+    disk = disk if disk is not None else FakeDisk()
 
     def client_factory(base: str, token: Callable[[], str]) -> CanvasClient:
         async def no_sleep(_s: float) -> None:
@@ -144,8 +168,9 @@ def build_hub(
         owner_env_id=owner,
         pairing=pairing,
         mailer_factory=outbox.mailer if email else None,
+        disk_usage=disk,
     )
-    return HubEnv(hub, Signup(hub), canvas, clock, notifiers, tmp_path, key, outbox)
+    return HubEnv(hub, Signup(hub), canvas, clock, notifiers, tmp_path, key, outbox, disk)
 
 
 async def sign_up(

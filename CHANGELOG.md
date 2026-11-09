@@ -16,6 +16,11 @@ All notable changes to this project are documented here. The format follows [Kee
 - **`/settings → 📧 Email`** explains `/email` and shows the current address, so every setting can be reached from `/settings`. The email line says "not available on this bot" when the bot has no mail server.
 - Owner `/users` shows whether each person gets email (yes/no only).
 
+- **Owner alerts.** The person who runs the bot gets a ⚠️ Telegram message when a user's Canvas sync has failed for 6 hours for a reason other than a rejected token, when 3 emails in a row couldn't be sent, when the data disk has under 200 MB or 5 % free, or when a user's check has been running for 10 minutes. Each problem is reported at most once per 24 hours, with a ✅ note when it clears, and a restart doesn't repeat them. Alerts name people only by name and Telegram ID, never their assignments, tokens or addresses.
+- **Owner `/health`:** uptime, version, users (active and signing up), the last check, free disk space, whether email is set up (and failing), how many people have sync problems and how many alerts are open.
+- An `hourly summary` log line with counts only (users, messages sent and failed by kind, sync problems, free disk), for `docker compose logs`.
+- Hosting guide: a *Monitoring* section, a *Back up and restore* section (the backup now also includes `.env`; it holds the bot token, the encryption key and the SMTP password, so keep it private) and more troubleshooting rows.
+
 - **Announcements and events are no longer treated as homework.** A course announcement now gets one 📢 message when it's posted, a calendar event gets a 📅 heads-up an hour before it starts, and the morning list shows both under a new *Announcements & events* section. Neither is ever reminded, ranked or reported as overdue.
 
 ### Fixed

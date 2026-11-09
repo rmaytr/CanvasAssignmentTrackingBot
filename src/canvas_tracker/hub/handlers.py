@@ -298,6 +298,7 @@ def register_handlers(app: Application[Any, Any, Any, Any, Any, Any], signup: Si
     )
     app.add_handler(CommandHandler("invite", serial(invite_cmd(signup))))
     app.add_handler(CommandHandler("users", serial(_simple(signup, signup.users))))
+    app.add_handler(CommandHandler("health", serial(_simple(signup, signup.health))))
     app.add_handler(CommandHandler("remove", serial(remove_cmd(signup))))
     app.add_handler(CallbackQueryHandler(serial(item_button(signup)), pattern=ITEM_CALLBACK))
     app.add_handler(CallbackQueryHandler(serial(setup_button(signup)), pattern=SETUP_CALLBACK))

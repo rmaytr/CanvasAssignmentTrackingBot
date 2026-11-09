@@ -9,7 +9,14 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Protocol
 
-from canvas_tracker.domain.models import EMAIL_KINDS, FRESHNESS, Send, Settings, Snapshot
+from canvas_tracker.domain.models import (
+    EMAIL_KINDS,
+    FRESHNESS,
+    Send,
+    SendKind,
+    Settings,
+    Snapshot,
+)
 from canvas_tracker.notify.base import Notifier, NotifyError
 from canvas_tracker.planning.plan import plan
 from canvas_tracker.planning.timeutil import in_quiet
@@ -66,8 +73,10 @@ class Runtime:
         hidden_courses: frozenset[str] = frozenset(),
         item_retention: timedelta = timedelta(days=30),
         mailer: Notifier | None = None,
+        on_send: Callable[[SendKind, bool], None] | None = None,
     ) -> None:
         self.store = store
+        self.on_send = on_send
         self.sync = sync
         self.notifier = notifier
         self.mailer = mailer
@@ -159,15 +168,26 @@ class Runtime:
                 except NotifyError as exc:
                     self.store.mark_failed(send.key, str(exc) or type(exc).__name__)
                     log.warning("send failed", extra={"kind": send.kind.value})
+                    self._report(send.kind, ok=False)
                 else:
                     self.store.mark_sent(send.key, now, first_id)
                     log.info("sent", extra={"kind": send.kind.value, "items": len(send.item_refs)})
+                    self._report(send.kind, ok=True)
 
         self.store.set_time(LAST_TICK_AT, now)
         last_purge = self.store.get_time(LAST_PURGE_AT)
         if last_purge is None or now - last_purge >= PURGE_EVERY:
             self.store.purge(now, self.item_retention)
             self.store.set_time(LAST_PURGE_AT, now)
+
+    def _report(self, kind: SendKind, *, ok: bool) -> None:
+        """Tell the owner's monitor (counts only); it must never stop the sends."""
+        if self.on_send is None:
+            return
+        try:
+            self.on_send(kind, ok)
+        except Exception:
+            log.exception("send report failed")
 
     def _render(
         self, send: Send, snap: Snapshot, now: datetime, stale: bool

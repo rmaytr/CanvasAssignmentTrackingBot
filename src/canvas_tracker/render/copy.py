@@ -96,6 +96,7 @@ HELP_OWNER = "\n".join(
         "/invite: a one-time sign-up link for a friend",
         "/users: who's connected and whether their Canvas access works",
         "/remove N: remove user N from /users",
+        "/health: uptime, disk space, email and how many users have sync problems",
     ]
 )
 
@@ -346,6 +347,59 @@ USERS_STATE_SETUP = "setting up"
 USERS_STATE_OK = "✓ synced {when}"
 USERS_STATE_AUTH = "🔑 token rejected since {when}"
 USERS_STATE_NEVER = "not synced yet"
+# Owner: /health
+HEALTH = "\n".join(
+    [
+        "🩺 Health",
+        "Version: {version}",
+        "Up for: {uptime}",
+        "Users: {active} active, {onboarding} signing up (max {max})",
+        "Last check: {last_tick}",
+        "Disk: {disk}",
+        "Email: {email}",
+        "Sync problems: {sync}",
+        "Open alerts: {alerts}",
+    ]
+)
+HEALTH_BROKEN = "\n⚠️ {count} user(s) couldn't be started (TOKEN_KEY doesn't match their data)."
+HEALTH_STUCK = "\n⚠️ {count} user(s) have a check running for over 10 minutes."
+HEALTH_LAST_TICK = "{when} ({ago} ago)"
+HEALTH_NEVER = "not yet"
+HEALTH_UNKNOWN = "unknown"
+HEALTH_DISK = "{free} free of {total} ({percent}%)"
+HEALTH_DISK_LOW = " ⚠️ low"
+HEALTH_EMAIL_OFF = "not set up"
+HEALTH_EMAIL_OK = "set up"
+HEALTH_EMAIL_FAILING = "set up, ⚠️ the last {count} emails failed"
+HEALTH_SYNC_NONE = "none"
+HEALTH_SYNC = "{count} ({auth} token rejected, {other} can't sync)"
+
+# Owner alerts (at most once per 24 h each; names and Telegram IDs only, never Canvas data)
+MONITOR_SYNC_FAILING = (
+    "⚠️ Canvas sync for {name} (Telegram ID {telegram_id}) has failed for {hours} h: {reason}. "
+    "Their reminders use older data until it works again. /users shows everyone."
+)
+MONITOR_SYNC_RESOLVED = "✅ Canvas sync for {name} (Telegram ID {telegram_id}) works again."
+MONITOR_REASON_UNREACHABLE = "their Canvas can't be reached"
+MONITOR_REASON_PROTOCOL = "their Canvas sends replies the bot doesn't understand"
+MONITOR_REASON_HOST = "their Canvas address now points at a private network address"
+MONITOR_REASON_OTHER = "an unexpected error (see the bot's log)"
+MONITOR_STUCK = (
+    "⚠️ The check for {name} (Telegram ID {telegram_id}) has been running for {minutes} min. "
+    "Their Canvas may be hanging; nobody else is held up."
+)
+MONITOR_STUCK_RESOLVED = "✅ The check for {name} (Telegram ID {telegram_id}) finished."
+MONITOR_EMAIL_FAILING = (
+    "⚠️ The last {count} emails couldn't be sent. Check the SMTP settings and the bot's log "
+    "(docker compose logs bot)."
+)
+MONITOR_EMAIL_RESOLVED = "✅ Emails are going out again."
+MONITOR_DISK_LOW = (
+    "⚠️ The data volume is nearly full: {free} free of {total}. Free some space soon; "
+    "once it's full the bot can't save anything."
+)
+MONITOR_DISK_RESOLVED = "✅ The data volume has room again: {free} free of {total}."
+
 REMOVE_USAGE = "Usage: /remove N, where N is the number from /users."
 REMOVE_SELF = "You can't remove yourself. Use /disconnect if you want to leave."
 REMOVED = "Removed {name} and deleted their data."

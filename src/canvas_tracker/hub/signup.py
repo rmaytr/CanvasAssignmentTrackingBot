@@ -10,14 +10,16 @@ import contextlib
 import logging
 import math
 from dataclasses import dataclass
-from datetime import time, timedelta
+from datetime import datetime, time, timedelta
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
+from canvas_tracker import __version__
 from canvas_tracker.bot.pairing import ALPHABET, CODE_LENGTH, PairingResult
 from canvas_tracker.domain.models import MIN_REMINDER_INTERVAL, Settings
 from canvas_tracker.hub.email import EmailSetup
 from canvas_tracker.hub.hub import Hub
+from canvas_tracker.hub.monitor import HealthReport, disk_label
 from canvas_tracker.hub.parsing import (
     contains_canvas_token,
     looks_like_token,
@@ -31,7 +33,7 @@ from canvas_tracker.hub.registry import OWNER_KEY, User
 from canvas_tracker.hub.tenant import bot_defaults, user_settings
 from canvas_tracker.notify.base import NotifyError
 from canvas_tracker.render import copy
-from canvas_tracker.render.format import escape, format_due, format_span
+from canvas_tracker.render.format import escape, format_due, format_left, format_span
 from canvas_tracker.render.message import Button, RenderedMessage
 from canvas_tracker.render.views import email_label, rhythm_sentence, rhythm_short
 from canvas_tracker.store.repo import AUTH_FAILED_SINCE, LAST_SUCCESSFUL_SYNC_AT
@@ -628,6 +630,12 @@ class Signup:
             )
         return [Reply("\n".join(lines))]
 
+    def health(self, user: User) -> list[Reply]:
+        """/health: how the server is doing, in counts. Nobody's Canvas data is in it."""
+        if not self.is_owner(user):
+            return [Reply(copy.OWNER_ONLY)]
+        return [Reply(health_text(self.hub.health(), self.hub.clock(), user, self.hub.max_users))]
+
     async def remove(self, user: User, arg: str | None) -> list[Reply]:
         if not self.is_owner(user):
             return [Reply(copy.OWNER_ONLY)]
@@ -663,3 +671,44 @@ class Signup:
             await notifier.send(RenderedMessage(copy.REMOVED_BY_OWNER))
         await self.hub.remove(target.telegram_id)
         return [Reply(copy.REMOVED.format(name=target.display_name or "?"))]
+
+
+def health_text(report: HealthReport, now: datetime, viewer: User, max_users: int) -> str:
+    zone = ZoneInfo(viewer.tz or "UTC")
+    last = report.last_tick
+    if last is None:
+        last_tick = copy.HEALTH_NEVER
+    else:
+        when = format_due(last, now, zone)
+        last_tick = copy.HEALTH_LAST_TICK.format(when=when, ago=format_left(now - last))
+    if not report.email_configured:
+        email = copy.HEALTH_EMAIL_OFF
+    elif report.email_failures > 0:
+        email = copy.HEALTH_EMAIL_FAILING.format(count=report.email_failures)
+    else:
+        email = copy.HEALTH_EMAIL_OK
+    if report.sync_problems == 0:
+        sync = copy.HEALTH_SYNC_NONE
+    else:
+        sync = copy.HEALTH_SYNC.format(
+            count=report.sync_problems,
+            auth=report.auth_problems,
+            other=report.sync_problems - report.auth_problems,
+        )
+    text = copy.HEALTH.format(
+        version=__version__,
+        uptime=format_left(now - report.started_at),
+        active=report.users_active,
+        onboarding=report.users_onboarding,
+        max=max_users,
+        last_tick=last_tick,
+        disk=disk_label(report.disk),
+        email=email,
+        sync=sync,
+        alerts=report.open_alerts,
+    )
+    if report.users_broken:
+        text += copy.HEALTH_BROKEN.format(count=report.users_broken)
+    if report.stuck:
+        text += copy.HEALTH_STUCK.format(count=report.stuck)
+    return text
