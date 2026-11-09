@@ -133,7 +133,8 @@ class Enrichment:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Cycle:
-    anchor: datetime
+    anchor: datetime  # the instant of slot 0; after an interval change it may be in the future
+    interval: timedelta | None = None  # the spacing the cycle was opened with (None: unknown)
 
     def __post_init__(self) -> None:
         _check_utc(self)
@@ -146,7 +147,7 @@ class Settings:
     digest_grace_until: time = time(12, 0)
     digest_lookahead: timedelta = timedelta(days=14)
     reminder_window: timedelta = timedelta(hours=24)
-    reminder_interval: timedelta = timedelta(minutes=120)
+    reminder_interval: timedelta | None = timedelta(minutes=120)  # None: no repeating reminders
     quiet_start: time | None = time(0, 0)
     quiet_end: time | None = time(8, 0)
     overdue_reminders: bool = False
@@ -159,7 +160,7 @@ class Settings:
             ZoneInfo(self.tz)
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ValueError(f"unknown time zone: {self.tz!r}") from exc
-        if self.reminder_interval < MIN_REMINDER_INTERVAL:
+        if self.reminder_interval is not None and self.reminder_interval < MIN_REMINDER_INTERVAL:
             raise ValueError("reminder_interval must be at least 30 minutes")
 
     @property

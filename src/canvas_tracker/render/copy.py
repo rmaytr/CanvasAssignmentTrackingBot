@@ -40,9 +40,9 @@ TYPE_LABELS = {"quiz": "quiz", "peer_review": "peer review"}
 
 # Reminders and alerts
 REMINDER_HEADERS = (
-    "⏰ Due within 24 hours: {count} not submitted",
-    "⏰ Still to submit in the next 24 hours: {count}",
-    "⏰ Reminder: {count} due within 24 hours",
+    "⏰ Due within {window}: {count} not submitted",
+    "⏰ Still to submit in the next {window}: {count}",
+    "⏰ Reminder: {count} due within {window}",
 )
 REMINDER_LINE = "due {when} · {left} left"
 UNDER_TWO_HOURS = " ⚠️"
@@ -69,8 +69,7 @@ PAIR_WRONG = "That code isn't right. Check the bot's log and try again."
 PAIR_EXPIRED = "That code has expired. A new one is in the bot's log."
 PAIR_LOCKED = "Too many wrong codes. A new one is in the bot's log."
 WELCOME = (
-    "👋 Hi! Your digest arrives at {digest} ({tz}). When something is due within {window} h, "
-    "you get a reminder every {interval} until it's submitted. Quiet hours: {quiet}.\n"
+    "👋 Hi! Your morning list arrives at {digest} ({tz}). {rhythm} Quiet hours: {quiet}.\n"
     "Send /help for commands."
 )
 QUIET_OFF = "off"
@@ -83,7 +82,7 @@ HELP = "\n".join(
         "/sync: check Canvas right now",
         "/status: last sync, token state, next list and reminder",
         "/pause 3h | 30m | until 18:00 | off: pause reminders",
-        "/settings: time zone, morning time, quiet hours, Canvas token or address",
+        "/settings: time zone, morning time, quiet hours, reminders, Canvas token or address",
         "/email you@school.edu | off: also get the morning list and deadline emails",
         "/disconnect: delete everything the bot knows about you",
         "/help: this list",
@@ -130,6 +129,8 @@ STATUS_AUTH_OK = "OK"
 STATUS_AUTH_FAILED = "failed since {since}"
 STATUS_NO_SLOT = "none scheduled"
 STATUS_REMINDERS_ON = "Reminders: on"
+STATUS_SLOT_OFF = "none (repeating reminders are off)"
+STATUS_REMINDERS_OFF = "Reminders: morning list and one-off alerts only (/settings → ⏰ Reminders)"
 STATUS_PAUSED = "Paused until {until}"
 PAUSE_USAGE = "Usage: /pause 30m, /pause 3h, /pause until 18:00, or /pause off (up to 7 days)."
 PAUSED_UNTIL = "💤 Reminders paused until {until}. The digest still comes."
@@ -156,7 +157,8 @@ SIGNUP_EXPIRED = (
 )
 SIGNUP_INTRO = (
     "👋 Welcome! I'll send you a ranked list of what's due every morning, and a reminder "
-    "every 2 hours for anything due within 24 hours, until you submit it.\n\n"
+    "every {interval} for anything due within {window}, until you submit it. You can "
+    "change how often later in /settings.\n\n"
     "How your data is handled:\n"
     "• Your Canvas access token is stored encrypted on the server of the person who runs "
     "this bot. They could technically access it, so only sign up if you trust them.\n"
@@ -232,7 +234,8 @@ QUIET_COVERS_DIGEST = (
 BTN_QUIET_OFF = "Off"
 QUIET_RANGE = "{start} to {end}"
 ALL_SET = (
-    "✅ All set! Your morning list arrives at {digest} ({tz}). Quiet hours: {quiet}.\n"
+    "✅ All set! Your morning list arrives at {digest} ({tz}). {rhythm} Quiet hours: {quiet}.\n"
+    "Want reminders more or less often? Send /settings and tap ⏰ Reminders.\n"
     "I'm checking Canvas now. Send /today to see what's due, or /help for everything else."
 )
 FINISH_SIGNUP_FIRST = "Let's finish setting up first."
@@ -242,6 +245,8 @@ SETTINGS = (
     "Time zone: {tz}\n"
     "Morning list: {digest}\n"
     "Quiet hours: {quiet}\n"
+    "Reminders: {reminders}\n"
+    "Morning list covers: the next {lookahead}\n"
     "Email: {email}\n\n"
     "Tap what you'd like to change. /email changes the email address."
 )
@@ -250,6 +255,38 @@ BTN_SET_DIGEST = "☀️ Morning time"
 BTN_SET_QUIET = "🌙 Quiet hours"
 BTN_SET_TOKEN = "🔑 Canvas token"
 BTN_SET_URL = "🏫 Canvas address"
+BTN_SET_REMINDERS = "⏰ Reminders"
+
+# Reminder rhythm (/settings → ⏰ Reminders)
+SPAN_MINUTES = "{n} minutes"
+SPAN_HOUR = "1 hour"
+SPAN_HOURS = "{n} hours"
+SPAN_DAYS = "{n} days"
+RHYTHM_ON = (
+    "When something is due within {window}, you get a reminder every {interval} "
+    "until it's submitted."
+)
+RHYTHM_OFF = (
+    "Repeating reminders are off: besides the morning list you only get one-off alerts "
+    "(new last-minute work, deadlines overnight, overdue work, snooze ends)."
+)
+RHYTHM_SHORT_ON = "every {interval}, for work due within {window}"
+RHYTHM_SHORT_OFF = "off (morning list and one-off alerts only)"
+REMINDERS_MENU = (
+    "⏰ Reminders\n"
+    "Repeat: {interval}\n"
+    "Counts as urgent: due within {window}\n"
+    "Morning list covers: the next {lookahead}\n\n"
+    'Tap to change. "No repeats" keeps the morning list and one-off alerts '
+    "(new last-minute work, deadlines overnight, overdue work, snooze ends)."
+)
+REMINDERS_REPEAT_ON = "every {interval}"
+REMINDERS_REPEAT_OFF = "no repeats"
+BTN_INTERVAL = "Every {hours} h"
+BTN_INTERVAL_OFF = "No repeats"
+BTN_WINDOW = "Within {hours} h"
+BTN_LOOKAHEAD = "{days}-day list"
+BTN_CHOSEN = "✓ {label}"
 ASK_URL_EDIT = (
     "What's the new Canvas address (e.g. canvas.school.edu)? /cancel keeps the current one."
 )
@@ -318,7 +355,7 @@ BOT_COMMANDS = (
     ("sync", "Check Canvas right now"),
     ("status", "Last sync and next reminder"),
     ("pause", "Pause reminders, e.g. /pause 3h"),
-    ("settings", "Time zone, times, Canvas token"),
+    ("settings", "Time zone, times, reminders, Canvas token"),
     ("email", "Get emails too, e.g. /email you@school.edu"),
     ("help", "All commands"),
     ("disconnect", "Delete everything about you"),

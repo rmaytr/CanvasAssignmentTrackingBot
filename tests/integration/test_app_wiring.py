@@ -16,7 +16,7 @@ from telegram.request import BaseRequest, RequestData
 
 from canvas_tracker.hub.handlers import register_handlers
 from canvas_tracker.render import copy
-from tests.hub_helpers import GOOD_TOKEN, build_hub
+from tests.hub_helpers import DEFAULT_INTRO, GOOD_TOKEN, build_hub
 
 
 class FakeTelegram(BaseRequest):
@@ -142,7 +142,7 @@ async def test_full_flow_through_the_real_application(tmp_path: Path) -> None:
         assert link.startswith("https://t.me/TestCanvasBot?start=")
         code = link.split("start=")[1]
         await send(5, f"/start {code}")
-        assert fake.texts(5)[:2] == [copy.SIGNUP_INTRO, copy.ASK_URL]
+        assert fake.texts(5)[:2] == [DEFAULT_INTRO, copy.ASK_URL]
         await send(5, "/today")
         assert fake.texts(5)[-2] == copy.FINISH_SIGNUP_FIRST
 

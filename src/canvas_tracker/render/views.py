@@ -149,6 +149,11 @@ def render_status(info: StatusInfo, now: datetime, settings: Settings) -> Render
         return format_due(t, now, tz)
 
     paused = info.pause_until is not None and info.pause_until > now
+    off = settings.reminder_interval is None
+    if info.next_slot_at:
+        slot = when(info.next_slot_at)
+    else:
+        slot = copy.STATUS_SLOT_OFF if off else copy.STATUS_NO_SLOT
     values = {
         "sync": when(info.last_successful_sync_at)
         if info.last_successful_sync_at
@@ -157,10 +162,10 @@ def render_status(info: StatusInfo, now: datetime, settings: Settings) -> Render
         if info.auth_failed_since
         else copy.STATUS_AUTH_OK,
         "digest": when(info.next_digest_at),
-        "slot": when(info.next_slot_at) if info.next_slot_at else copy.STATUS_NO_SLOT,
+        "slot": slot,
         "pause": copy.STATUS_PAUSED.format(until=when(info.pause_until))
         if paused and info.pause_until is not None
-        else copy.STATUS_REMINDERS_ON,
+        else (copy.STATUS_REMINDERS_OFF if off else copy.STATUS_REMINDERS_ON),
         "version": info.version,
     }
     return RenderedMessage("\n".join(line.format(**values) for line in copy.STATUS_LINES))

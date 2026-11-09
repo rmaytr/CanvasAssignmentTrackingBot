@@ -1,4 +1,4 @@
-"""The consolidated 2-hour reminder cycle and its one-off alerts (PRD §7.5).
+"""The consolidated reminder cycle (every 2 hours by default) and its one-off alerts (PRD §7.5).
 
 All timing is in UTC durations from the cycle anchor, never wall-clock slots,
 so clock changes can't shift or duplicate reminders.
@@ -6,7 +6,7 @@ so clock changes can't shift or duplicate reminders.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from canvas_tracker.domain.done_rule import is_done
 from canvas_tracker.domain.models import (
@@ -60,21 +60,70 @@ def _open_item(item: Item) -> bool:
     )
 
 
+def _next_after(now: datetime, anchor: datetime, interval: timedelta) -> datetime:
+    """The first slot of the cycle (``anchor``, ``interval``) that is after ``now``."""
+    if now < anchor:
+        return anchor
+    return anchor + ((now - anchor) // interval + 1) * interval
+
+
+def _rebased(now: datetime, snap: Snapshot, interval: timedelta) -> datetime | None:
+    """The new anchor when the reminder interval changed mid-cycle, else None.
+
+    Slot numbers only mean something for the interval they were counted with, so
+    the cycle restarts on the new interval from its latest slot: a slot that is
+    still owed (in its grace period, not sent) becomes slot 0 of the new cycle;
+    otherwise the next reminder comes on the new spacing after the latest slot,
+    or when it was planned anyway if that is sooner. Either way no key repeats:
+    a new anchor is never an old anchor, except when the owed slot is the old
+    cycle's slot 0, whose key is then the same one and still unsent.
+    """
+    cycle = snap.cycle
+    if cycle is None or cycle.interval is None or cycle.interval == interval:
+        return None
+    old = cycle.interval
+    if now < cycle.anchor:  # restarted before and nothing sent yet
+        return min(cycle.anchor, floor_minute(now) + interval)
+    k = (now - cycle.anchor) // old
+    latest = cycle.anchor + k * old
+    if now - latest <= SLOT_GRACE and reminder_key(cycle.anchor, k) not in snap.sent_keys:
+        return latest
+    return min(latest + old, _next_after(now, latest, interval))
+
+
+def next_reminder_at(now: datetime, snap: Snapshot, settings: Settings) -> datetime | None:
+    """When the open cycle's next reminder slot is (None: no cycle, or reminders are off)."""
+    interval = settings.reminder_interval
+    if interval is None or snap.cycle is None:
+        return None
+    anchor = _rebased(now, snap, interval) or snap.cycle.anchor
+    return _next_after(now, anchor, interval)
+
+
 def plan_cycle(now: datetime, snap: Snapshot, settings: Settings) -> Plan:
-    """Open/close the reminder cycle and send the current slot if it is owed."""
+    """Open/close the reminder cycle and send the current slot if it is owed.
+
+    With reminders off (``reminder_interval`` None) nothing is sent and no cycle
+    opens, but an open one is kept while work is urgent, so turning reminders back
+    on continues its rhythm instead of reminding again at once.
+    """
     urgent = [i for i in snap.items if is_urgent(i, now, settings)]
+    interval = settings.reminder_interval
     if snap.cycle is None:
-        if not urgent:
+        if not urgent or interval is None:
             return Plan()
         anchor = floor_minute(now)
         opened: datetime | None = anchor
     else:
         if not urgent:
             return Plan(close_cycle=True)
-        anchor = snap.cycle.anchor
-        opened = None
+        if interval is None:
+            return Plan()
+        opened = _rebased(now, snap, interval)
+        anchor = snap.cycle.anchor if opened is None else opened
+    if now < anchor:
+        return Plan(open_cycle_at=opened)
 
-    interval = settings.reminder_interval
     k = (now - anchor) // interval
     slot = anchor + k * interval
     zone = settings.zone
@@ -96,12 +145,28 @@ def plan_cycle(now: datetime, snap: Snapshot, settings: Settings) -> Plan:
     )
 
 
-def _next_slot(now: datetime, snap: Snapshot, settings: Settings) -> datetime:
+def _next_digest_at(now: datetime, settings: Settings) -> datetime:
+    zone = settings.zone
+    today = local_date(now, zone)
+    at = at_local(today, settings.digest_time, zone)
+    return at if at > now else at_local(today + timedelta(days=1), settings.digest_time, zone)
+
+
+def _new_urgent_rule(
+    now: datetime, snap: Snapshot, settings: Settings
+) -> tuple[datetime, timedelta]:
+    """(horizon, recent): alert an item due by ``horizon`` that wasn't mentioned within
+    ``recent`` before its deadline.
+
+    With reminders on, the horizon is the next reminder slot. With them off, it is the
+    next morning list, and "mentioned" means since it became urgent: work posted after
+    this morning's list and due before the next one gets one heads-up.
+    """
     interval = settings.reminder_interval
-    if snap.cycle is None:
-        return floor_minute(now) + interval
-    anchor = snap.cycle.anchor
-    return anchor + ((now - anchor) // interval + 1) * interval
+    if interval is None:
+        return _next_digest_at(now, settings), settings.reminder_window
+    horizon = next_reminder_at(now, snap, settings) or floor_minute(now) + interval
+    return horizon, interval
 
 
 def _overnight(now: datetime, snap: Snapshot, settings: Settings) -> list[Send]:
@@ -129,26 +194,26 @@ def plan_alerts(now: datetime, snap: Snapshot, settings: Settings) -> tuple[Send
     if _quiet(now, settings):
         return tuple(overnight)
 
-    interval = settings.reminder_interval
-    next_slot = _next_slot(now, snap, settings)
+    next_slot, recent = _new_urgent_rule(now, snap, settings)
     new_urgent: list[Send] = []
     snooze_end: list[Send] = []
     for item in _by_due([i for i in snap.items if is_active(i, now, settings, snap.pause_until)]):
         if item.due_at is None:
             continue
         last = snap.last_reminded_at.get(item.ref)
-        key = new_urgent_key(item)
-        if (
-            item.due_at <= next_slot
-            and (last is None or last < item.due_at - interval)
-            and key not in snap.sent_keys
-        ):
-            new_urgent.append(Send(key, SendKind.NEW_URGENT, (item.ref,)))
         until = item.snoozed_until
         if until is not None and now - SNOOZE_END_GRACE < until <= now:
             key = snooze_end_key(item)
             if (last is None or last < until) and key not in snap.sent_keys:
                 snooze_end.append(Send(key, SendKind.SNOOZE_END, (item.ref,)))
+                continue  # the snooze-end message already says it's due soon
+        key = new_urgent_key(item)
+        if (
+            item.due_at <= next_slot
+            and (last is None or last < item.due_at - recent)
+            and key not in snap.sent_keys
+        ):
+            new_urgent.append(Send(key, SendKind.NEW_URGENT, (item.ref,)))
 
     overdue: list[Send] = []
     for item in _by_due([i for i in snap.items if _open_item(i) and not i.stop_reminders]):

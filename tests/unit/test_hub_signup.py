@@ -8,6 +8,7 @@ from canvas_tracker.render import copy
 from tests.factories import NOW
 from tests.hub_helpers import (
     BAD_TOKEN,
+    DEFAULT_INTRO,
     GOOD_TOKEN,
     NO_PLANNER_TOKEN,
     build_hub,
@@ -23,7 +24,7 @@ async def test_invited_friend_signs_up_end_to_end(tmp_path: Path) -> None:
     env = build_hub(tmp_path)
     code = env.hub.registry.create_invite(NOW)
     replies = await env.signup.start(7, "Ana", code)
-    assert texts(replies) == [copy.SIGNUP_INTRO, copy.ASK_URL]
+    assert texts(replies) == [DEFAULT_INTRO, copy.ASK_URL]
 
     user = env.hub.registry.get_user(7)
     assert user is not None
@@ -88,12 +89,12 @@ async def test_full_bot_keeps_the_invite_unused(tmp_path: Path) -> None:
     code = env.hub.registry.create_invite(NOW)
     assert texts(await env.signup.start(5, "F", code)) == [copy.BOT_FULL]
     env.hub.max_users = 2
-    assert texts(await env.signup.start(5, "F", code))[0] == copy.SIGNUP_INTRO
+    assert texts(await env.signup.start(5, "F", code))[0] == DEFAULT_INTRO
 
 
 async def test_owner_from_env_and_from_pairing_code(tmp_path: Path) -> None:
     env = build_hub(tmp_path / "a", owner=1)
-    assert texts(await env.signup.start(1, "Me", None))[0] == copy.SIGNUP_INTRO
+    assert texts(await env.signup.start(1, "Me", None))[0] == DEFAULT_INTRO
     user = env.hub.registry.get_user(1)
     assert user is not None and user.is_owner
 
@@ -168,6 +169,7 @@ async def test_settings_edits_rebuild_the_tenant(tmp_path: Path) -> None:
         "set:tz",
         "set:dt",
         "set:qh",
+        "set:rem",
         "set:tok",
         "set:url",
     ]

@@ -15,6 +15,7 @@ from canvas_tracker.bot.deps import BotDeps
 from canvas_tracker.domain.done_rule import is_done
 from canvas_tracker.notify.telegram import to_markup
 from canvas_tracker.planning.keys import digest_key
+from canvas_tracker.planning.reminders import next_reminder_at
 from canvas_tracker.planning.timeutil import at_local, local_date
 from canvas_tracker.render import copy
 from canvas_tracker.render.digest import render_digest
@@ -119,11 +120,7 @@ def status_cmd(deps: BotDeps) -> Handler:
     async def handler(update: Update, _context: Any) -> None:
         now = deps.clock()
         snap = deps.store.snapshot(deps.hidden_courses)
-        next_slot = None
-        if snap.cycle is not None:
-            interval = deps.settings.reminder_interval
-            k = (now - snap.cycle.anchor) // interval
-            next_slot = snap.cycle.anchor + (k + 1) * interval
+        next_slot = next_reminder_at(now, snap, deps.settings)
         info = StatusInfo(
             last_successful_sync_at=snap.last_successful_sync_at,
             auth_failed_since=snap.auth_failed_since,

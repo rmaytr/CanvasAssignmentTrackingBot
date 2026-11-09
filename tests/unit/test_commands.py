@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import timedelta
 from unittest.mock import AsyncMock
 
@@ -54,3 +55,15 @@ async def test_status_command_mentions_version() -> None:
     bot = mock_bot()
     await status_cmd(deps)(message_update("/status", bot=bot), context())
     assert "0.2.0" in bot.send_message.await_args.kwargs["text"]
+
+
+async def test_status_shows_the_next_slot_of_a_cycle_and_when_reminders_are_off() -> None:
+    deps = make_deps(owner=77)
+    deps.store.open_cycle(NOW - timedelta(minutes=30), timedelta(hours=2))
+    bot = mock_bot()
+    await status_cmd(deps)(message_update("/status", bot=bot), context())
+    assert "Next reminder: today 1:30 PM" in bot.send_message.await_args.kwargs["text"]
+    deps.settings = replace(deps.settings, reminder_interval=None)
+    await status_cmd(deps)(message_update("/status", bot=bot), context())
+    text = bot.send_message.await_args.kwargs["text"]
+    assert f"Next reminder: {copy.STATUS_SLOT_OFF}" in text and copy.STATUS_REMINDERS_OFF in text

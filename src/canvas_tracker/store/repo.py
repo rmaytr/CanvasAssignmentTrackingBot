@@ -346,12 +346,33 @@ class Store:
 
     # --- cycles --------------------------------------------------------------
 
-    def open_cycle(self, anchor: datetime) -> None:
+    def open_cycle(
+        self,
+        anchor: datetime,
+        interval: timedelta | None = None,
+        *,
+        now: datetime | None = None,
+    ) -> None:
+        """Start a cycle (closing any open one at ``now``, default ``anchor``). The anchor
+        may be in the future when the cycle restarts after an interval change."""
+        closed = anchor if now is None else min(anchor, now)
+        minutes = None if interval is None else int(interval.total_seconds() // 60)
         with self._transaction():
             self.conn.execute(
-                "UPDATE cycles SET closed_at_utc = ? WHERE closed_at_utc IS NULL", (to_db(anchor),)
+                "UPDATE cycles SET closed_at_utc = ? WHERE closed_at_utc IS NULL", (to_db(closed),)
             )
-            self.conn.execute("INSERT INTO cycles (anchor_utc) VALUES (?)", (to_db(anchor),))
+            self.conn.execute(
+                "INSERT INTO cycles (anchor_utc, interval_minutes) VALUES (?, ?)",
+                (to_db(anchor), minutes),
+            )
+
+    def fill_cycle_interval(self, interval: timedelta) -> None:
+        """Record ``interval`` on an open cycle from before intervals were stored."""
+        self.conn.execute(
+            "UPDATE cycles SET interval_minutes = ? "
+            "WHERE closed_at_utc IS NULL AND interval_minutes IS NULL",
+            (int(interval.total_seconds() // 60),),
+        )
 
     def close_cycle(self, now: datetime) -> None:
         self.conn.execute(
@@ -409,16 +430,25 @@ class Store:
                     if ref not in last_reminded or sent_at > last_reminded[ref]:
                         last_reminded[ref] = sent_at
         row = self.conn.execute(
-            "SELECT anchor_utc FROM cycles WHERE closed_at_utc IS NULL ORDER BY id DESC LIMIT 1"
+            "SELECT anchor_utc, interval_minutes FROM cycles "
+            "WHERE closed_at_utc IS NULL ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        anchor = from_db(row["anchor_utc"]) if row is not None else None
+        cycle = None
+        if row is not None:
+            anchor = from_db(row["anchor_utc"])
+            minutes = row["interval_minutes"]
+            if anchor is not None:
+                cycle = Cycle(
+                    anchor=anchor,
+                    interval=None if minutes is None else timedelta(minutes=minutes),
+                )
         return Snapshot(
             items=items,
             courses=courses,
             groups=groups,
             sent_keys=frozenset(sent_keys),
             last_reminded_at=last_reminded,
-            cycle=Cycle(anchor=anchor) if anchor is not None else None,
+            cycle=cycle,
             pause_until=self.get_time(PAUSE_UNTIL),
             last_successful_sync_at=self.get_time(LAST_SUCCESSFUL_SYNC_AT),
             auth_failed_since=self.get_time(AUTH_FAILED_SINCE),

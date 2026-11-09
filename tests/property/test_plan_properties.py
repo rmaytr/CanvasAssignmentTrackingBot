@@ -50,6 +50,8 @@ QUIET_KINDS = frozenset(
     }
 )
 NAG_KINDS = frozenset({SendKind.REMINDER, SendKind.NEW_URGENT, SendKind.SNOOZE_END})
+INTERVALS = [timedelta(hours=h) for h in (1, 2, 3, 4)]  # the choices in /settings
+WINDOWS = [timedelta(hours=h) for h in (12, 24, 48)]
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,14 @@ class Scenario:
     start: datetime
     items: tuple[Item, ...]
     submitted_at: tuple[datetime | None, ...]
+    # Optionally the user switches the reminder interval part-way through.
+    switch_at: datetime | None = None
+    switch_to: timedelta | None = None
+
+    def settings_at(self, t: datetime) -> Settings:
+        if self.switch_at is not None and t >= self.switch_at:
+            return replace(self.settings, reminder_interval=self.switch_to)
+        return self.settings
 
     def items_at(self, t: datetime) -> tuple[Item, ...]:
         return tuple(
@@ -75,10 +85,14 @@ def scenarios(draw: st.DrawFn) -> Scenario:
             st.tuples(st.integers(0, 23), st.integers(0, 23)).filter(lambda p: p[0] != p[1]),
         )
     )
+    rhythm = {
+        "reminder_interval": draw(st.sampled_from([*INTERVALS, None])),
+        "reminder_window": draw(st.sampled_from(WINDOWS)),
+    }
     cfg = (
-        make_settings(tz=zone, quiet_start=None, quiet_end=None)
+        make_settings(tz=zone, quiet_start=None, quiet_end=None, **rhythm)
         if quiet is None
-        else make_settings(tz=zone, quiet_start=time(quiet[0]), quiet_end=time(quiet[1]))
+        else make_settings(tz=zone, quiet_start=time(quiet[0]), quiet_end=time(quiet[1]), **rhythm)
     )
     start = BASE + timedelta(minutes=draw(st.integers(0, 9 * 24 * 60)))
     count = draw(st.integers(0, 6))
@@ -89,12 +103,22 @@ def scenarios(draw: st.DrawFn) -> Scenario:
         items.append(make_item(plannable_id=1000 + i, due_at=due))
         sub = draw(st.one_of(st.none(), st.integers(0, 3 * 24 * 60)))
         subs.append(None if sub is None else start + timedelta(minutes=sub))
-    return Scenario(cfg, start, tuple(items), tuple(subs))
+    switch_at: datetime | None = None
+    switch_to: timedelta | None = None
+    if draw(st.booleans()):
+        switch_at = start + timedelta(minutes=draw(st.integers(0, 3 * 24 * 60)))
+        switch_to = draw(st.sampled_from([*INTERVALS, None]))
+    return Scenario(cfg, start, tuple(items), tuple(subs), switch_at, switch_to)
 
 
 def run(sc: Scenario, replay_check: bool = False) -> list[tuple[datetime, Send]]:
     return simulate(
-        sc.items_at, sc.settings, sc.start, sc.start + HORIZON, step=STEP, replay_check=replay_check
+        sc.items_at,
+        sc.settings_at,
+        sc.start,
+        sc.start + HORIZON,
+        step=STEP,
+        replay_check=replay_check,
     )
 
 
@@ -127,9 +151,20 @@ def test_nothing_but_digest_and_overnight_inside_quiet_hours(sc: Scenario) -> No
 
 
 @given(scenarios())
+def test_reminders_off_means_no_repeating_reminders(sc: Scenario) -> None:
+    for t, send in run(sc):
+        if send.kind is SendKind.REMINDER:
+            assert sc.settings_at(t).reminder_interval is not None, (t, send)
+
+
+@given(scenarios())
 def test_active_items_are_reminded_at_least_every_interval(sc: Scenario) -> None:
+    intervals = {sc.settings.reminder_interval, sc.switch_to if sc.switch_at else None}
+    if sc.settings.reminder_interval is None or (sc.switch_at and sc.switch_to is None):
+        return  # with reminders off nothing repeats; see the test above
     log = run(sc)
-    span = sc.settings.reminder_interval + DIGEST_FOLD + STEP
+    # Across an interval change the gap is at most the longer of the two intervals.
+    span = max(i for i in intervals if i is not None) + DIGEST_FOLD + STEP
     for ref in {item.ref for item in sc.items}:
         covering = [t for t, s in log if s.kind in REMINDER_KINDS and ref in s.item_refs]
         t = sc.start

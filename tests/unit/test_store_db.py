@@ -18,8 +18,8 @@ def store(tmp_path: Path) -> Store:
 
 def test_migrate_is_idempotent_and_uses_wal(tmp_path: Path) -> None:
     conn = connect(tmp_path / "bot.db")
-    assert migrate(conn) == 3
-    assert migrate(conn) == 3
+    assert migrate(conn) == 4
+    assert migrate(conn) == 4
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -100,7 +100,7 @@ def test_new_database_gets_a_random_salt_and_refuses_unsalted_buttons(tmp_path: 
 def test_existing_database_keeps_accepting_its_old_unsalted_buttons(tmp_path: Path) -> None:
     _at_version_2(tmp_path / "old.db")
     conn = connect(tmp_path / "old.db")
-    assert migrate(conn) == 3
+    assert migrate(conn) == 4
     store = Store(conn)
     salt = store.button_salt()
     assert len(salt) == 8 and store.get_state(BUTTONS_UNSALTED_OK) == "1"

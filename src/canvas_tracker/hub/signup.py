@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 from canvas_tracker.bot.pairing import ALPHABET, CODE_LENGTH, PairingResult
+from canvas_tracker.domain.models import MIN_REMINDER_INTERVAL, Settings
 from canvas_tracker.hub.email import EmailSetup
 from canvas_tracker.hub.hub import Hub
 from canvas_tracker.hub.parsing import (
@@ -26,9 +27,10 @@ from canvas_tracker.hub.parsing import (
     resolve_timezone,
 )
 from canvas_tracker.hub.registry import OWNER_KEY, User
+from canvas_tracker.hub.tenant import bot_defaults, user_settings
 from canvas_tracker.notify.base import NotifyError
 from canvas_tracker.render import copy
-from canvas_tracker.render.format import format_due
+from canvas_tracker.render.format import format_due, format_span
 from canvas_tracker.render.message import Button, RenderedMessage
 from canvas_tracker.store.repo import AUTH_FAILED_SINCE, LAST_SUCCESSFUL_SYNC_AT
 
@@ -54,6 +56,16 @@ _US_ZONES = (
 )
 _DIGEST_CHOICES = (time(7, 0), time(8, 0), time(9, 0))
 _QUIET_CHOICES = ((time(0, 0), time(8, 0)), (time(23, 0), time(7, 0)), (time(1, 0), time(9, 0)))
+# The reminder rhythm a user can pick in /settings → ⏰ Reminders (su:ri / su:rw / su:la).
+INTERVAL_CHOICES = (1, 2, 3, 4)  # hours between repeating reminders; "off" is stored as 0
+WINDOW_CHOICES = (12, 24, 48)  # hours ahead that count as urgent
+LOOKAHEAD_CHOICES = (7, 14, 21)  # days the morning list covers (Canvas is read 21 days ahead)
+_RHYTHM_FIELDS = {
+    "ri": "reminder_interval_minutes",
+    "rw": "reminder_window_hours",
+    "la": "digest_lookahead_days",
+}
+assert timedelta(hours=min(INTERVAL_CHOICES)) >= MIN_REMINDER_INTERVAL  # noqa: S101
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,9 +127,83 @@ def quiet_keyboard() -> Keyboard:
 def settings_keyboard() -> Keyboard:
     return (
         (Button(copy.BTN_SET_TZ, "set:tz"), Button(copy.BTN_SET_DIGEST, "set:dt")),
-        (Button(copy.BTN_SET_QUIET, "set:qh"), Button(copy.BTN_SET_TOKEN, "set:tok")),
-        (Button(copy.BTN_SET_URL, "set:url"),),
+        (Button(copy.BTN_SET_QUIET, "set:qh"), Button(copy.BTN_SET_REMINDERS, "set:rem")),
+        (Button(copy.BTN_SET_TOKEN, "set:tok"), Button(copy.BTN_SET_URL, "set:url")),
     )
+
+
+def rhythm_sentence(s: Settings) -> str:
+    """One sentence on how often reminders come, for the welcome and all-set messages."""
+    if s.reminder_interval is None:
+        return copy.RHYTHM_OFF
+    return copy.RHYTHM_ON.format(
+        window=format_span(s.reminder_window), interval=format_span(s.reminder_interval)
+    )
+
+
+def rhythm_short(s: Settings) -> str:
+    if s.reminder_interval is None:
+        return copy.RHYTHM_SHORT_OFF
+    return copy.RHYTHM_SHORT_ON.format(
+        interval=format_span(s.reminder_interval), window=format_span(s.reminder_window)
+    )
+
+
+def _option(label: str, data: str, chosen: bool) -> Button:
+    return Button(copy.BTN_CHOSEN.format(label=label) if chosen else label, data)
+
+
+def reminders_keyboard(s: Settings) -> Keyboard:
+    interval = s.reminder_interval
+    every = [
+        _option(
+            copy.BTN_INTERVAL.format(hours=h), f"su:ri:{h * 60}", interval == timedelta(hours=h)
+        )
+        for h in INTERVAL_CHOICES
+    ]
+    every.append(_option(copy.BTN_INTERVAL_OFF, "su:ri:off", interval is None))
+    window = tuple(
+        _option(
+            copy.BTN_WINDOW.format(hours=h), f"su:rw:{h}", s.reminder_window == timedelta(hours=h)
+        )
+        for h in WINDOW_CHOICES
+    )
+    lookahead = tuple(
+        _option(
+            copy.BTN_LOOKAHEAD.format(days=d), f"su:la:{d}", s.digest_lookahead == timedelta(days=d)
+        )
+        for d in LOOKAHEAD_CHOICES
+    )
+    return (*_rows(every, 3), window, lookahead)
+
+
+def reminders_menu(s: Settings) -> Reply:
+    repeat = (
+        copy.REMINDERS_REPEAT_OFF
+        if s.reminder_interval is None
+        else copy.REMINDERS_REPEAT_ON.format(interval=format_span(s.reminder_interval))
+    )
+    text = copy.REMINDERS_MENU.format(
+        interval=repeat,
+        window=format_span(s.reminder_window),
+        lookahead=format_span(s.digest_lookahead),
+    )
+    return Reply(text, reminders_keyboard(s))
+
+
+def parse_rhythm(kind: str, value: str) -> int | None:
+    """The registry value for a tapped rhythm option, or None if it isn't one we offer."""
+    if kind == "ri":
+        if value == "off":
+            return 0
+        allowed = {h * 60 for h in INTERVAL_CHOICES}
+    elif kind == "rw":
+        allowed = set(WINDOW_CHOICES)
+    elif kind == "la":
+        allowed = set(LOOKAHEAD_CHOICES)
+    else:
+        return None
+    return int(value) if value.isdigit() and int(value) in allowed else None
 
 
 _PAIRING_REPLIES = {
@@ -194,35 +280,47 @@ class Signup:
             if result is PairingResult.OK:
                 self.registry.set_state(OWNER_KEY, str(telegram_id))
                 self.registry.create_user(telegram_id, name, now=now, is_owner=True)
-                return [Reply(copy.PAIRED_OWNER), Reply(copy.SIGNUP_INTRO), Reply(copy.ASK_URL)]
+                return [Reply(copy.PAIRED_OWNER), self.intro(), Reply(copy.ASK_URL)]
             return [Reply(_PAIRING_REPLIES[result])]
         if owner == telegram_id:
             self.registry.create_user(telegram_id, name, now=now, is_owner=True)
-            return [Reply(copy.SIGNUP_INTRO), Reply(copy.ASK_URL)]
+            return [self.intro(), Reply(copy.ASK_URL)]
         if arg:
             await self.hub.prune_signups()  # stalled sign-ups don't hold a slot
             if self.registry.count_users() >= self.hub.max_users:
                 return [Reply(copy.BOT_FULL)]
             if self.registry.redeem_invite(arg, telegram_id, now):
                 self.registry.create_user(telegram_id, name, now=now)
-                return [Reply(copy.SIGNUP_INTRO), Reply(copy.ASK_URL)]
+                return [self.intro(), Reply(copy.ASK_URL)]
         return [Reply(copy.INVITE_ONLY)]
+
+    def intro(self) -> Reply:
+        """The sign-up welcome, with the bot's default rhythm (everyone starts on it)."""
+        s = bot_defaults(self.hub.shared)
+        interval = s.reminder_interval or timedelta(hours=2)  # the bot default is never off
+        return Reply(
+            copy.SIGNUP_INTRO.format(
+                interval=format_span(interval), window=format_span(s.reminder_window)
+            )
+        )
 
     def welcome(self, user: User) -> Reply:
         tenant = self.hub.tenant(user.telegram_id)
         if tenant is None:
             return Reply(copy.ACCOUNT_PROBLEM)
         s = tenant.settings
-        interval = int(s.reminder_interval.total_seconds() // 60)
         return Reply(
             copy.WELCOME.format(
                 digest=fmt_time(s.digest_time),
                 tz=s.tz,
-                window=int(s.reminder_window.total_seconds() // 3600),
-                interval=f"{interval // 60} h" if interval % 60 == 0 else f"{interval} min",
+                rhythm=rhythm_sentence(s),
                 quiet=fmt_quiet(user.quiet),
             )
         )
+
+    def _effective(self, user: User) -> Settings:
+        """The settings this (active) user's reminders run with."""
+        return user_settings(user, self.hub.shared)
 
     # --- answers to the current step ------------------------------------------
 
@@ -254,6 +352,8 @@ class Signup:
     async def choice(self, user: User, kind: str, value: str) -> list[Reply]:
         """A tapped option button (``su:<kind>:<value>``) counts as typing that value."""
         self._seen(user)
+        if kind in _RHYTHM_FIELDS:
+            return await self._rhythm(user, kind, value)
         if kind not in _KIND_STEPS or user.step not in _KIND_STEPS[kind]:
             return self.prompt(user)
         if kind == "tz":
@@ -358,9 +458,28 @@ class Signup:
         await self._refresh(user.telegram_id)
         done = self.registry.get_user(user.telegram_id)
         assert done is not None and done.tz is not None  # noqa: S101
-        return [
-            Reply(copy.ALL_SET.format(digest=fmt_time(digest), tz=done.tz, quiet=fmt_quiet(value)))
-        ]
+        text = copy.ALL_SET.format(
+            digest=fmt_time(digest),
+            tz=done.tz,
+            rhythm=rhythm_sentence(self._effective(done)),
+            quiet=fmt_quiet(value),
+        )
+        return [Reply(text)]
+
+    async def _rhythm(self, user: User, kind: str, value: str) -> list[Reply]:
+        """A tapped reminder-rhythm option. Works from any menu while active, since each
+        button names one exact value; the change applies from the very next tick."""
+        if user.status != "active":
+            return self.prompt(user)
+        number = parse_rhythm(kind, value)
+        if number is None:
+            return [reminders_menu(self._effective(user))]
+        self.registry.update_user(user.telegram_id, **{_RHYTHM_FIELDS[kind]: number})
+        await self._refresh(user.telegram_id)
+        updated = self.registry.get_user(user.telegram_id)
+        assert updated is not None  # noqa: S101
+        menu = reminders_menu(self._effective(updated))
+        return [Reply(f"{copy.SAVED}\n\n{menu.text}", menu.keyboard)]
 
     async def _refresh(self, telegram_id: int) -> None:
         """Rebuild the user's tenant; its first tick (sync, maybe a message) starts right away."""
@@ -377,11 +496,14 @@ class Signup:
     def settings(self, user: User) -> list[Reply]:
         if user.status != "active":
             return [Reply(copy.FINISH_SIGNUP_FIRST), *self.prompt(user)]
+        effective = self._effective(user)
         text = copy.SETTINGS.format(
             host=urlsplit(user.canvas_base_url or "").hostname or "?",
             tz=user.tz,
             digest=fmt_time(user.digest_time or time(8, 0)),
             quiet=fmt_quiet(user.quiet),
+            reminders=rhythm_short(effective),
+            lookahead=format_span(effective.digest_lookahead),
             email=self.email.address(user) or copy.EMAIL_OFF_LABEL,
         )
         return [Reply(text, settings_keyboard())]
@@ -399,6 +521,10 @@ class Signup:
             "tok": "edit_token",
             "url": "edit_url",
         }
+        if user.status == "active" and what == "rem":
+            if user.step is not None:  # leave any half-finished settings change
+                self.registry.update_user(user.telegram_id, step=None, pending_base_url=None)
+            return [reminders_menu(self._effective(user))]
         if user.status != "active" or what not in steps:
             return self.prompt(user)
         self.registry.update_user(user.telegram_id, step=steps[what], pending_base_url=None)

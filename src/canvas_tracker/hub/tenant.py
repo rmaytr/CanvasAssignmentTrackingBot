@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from canvas_tracker.bot.deps import BotDeps
-from canvas_tracker.domain.models import Settings
+from canvas_tracker.domain.models import MIN_REMINDER_INTERVAL, Settings
 from canvas_tracker.hub.parsing import quiet_window
 from canvas_tracker.hub.registry import Registry, User
 from canvas_tracker.hub.secretbox import SecretBox
@@ -44,12 +44,34 @@ def digest_grace_until(digest: time) -> time:
     return time(minutes // 60, minutes % 60)
 
 
+def bot_defaults(shared: Mapping[str, object]) -> Settings:
+    """The bot-wide reminder rhythm (from the environment), as a Settings value."""
+    return Settings(tz="UTC", **shared)  # type: ignore[arg-type]
+
+
+def rhythm(user: User) -> dict[str, object]:
+    """The parts of the reminder rhythm this user chose; the rest stays the bot default.
+    A value the bot could never have stored is ignored rather than locking the user out."""
+    chosen: dict[str, object] = {}
+    minutes = user.reminder_interval_minutes
+    if minutes == 0:
+        chosen["reminder_interval"] = None
+    elif minutes is not None and timedelta(minutes=minutes) >= MIN_REMINDER_INTERVAL:
+        chosen["reminder_interval"] = timedelta(minutes=minutes)
+    if user.reminder_window_hours is not None and user.reminder_window_hours > 0:
+        chosen["reminder_window"] = timedelta(hours=user.reminder_window_hours)
+    if user.digest_lookahead_days is not None and user.digest_lookahead_days > 0:
+        chosen["digest_lookahead"] = timedelta(days=user.digest_lookahead_days)
+    return chosen
+
+
 def user_settings(user: User, shared: Mapping[str, object], *, email: bool = False) -> Settings:
     if user.tz is None or user.canvas_base_url is None:
         raise ValueError("user hasn't finished signing up")
     digest = user.digest_time or DEFAULT_DIGEST
     quiet = quiet_window(user.quiet)
     start, end = (None, None) if quiet is None else quiet
+    values = {**shared, **rhythm(user)}
     return Settings(
         tz=user.tz,
         digest_time=digest,
@@ -58,7 +80,7 @@ def user_settings(user: User, shared: Mapping[str, object], *, email: bool = Fal
         quiet_end=end,
         canvas_host=urlsplit(user.canvas_base_url).hostname or "",
         email=email,
-        **shared,  # type: ignore[arg-type]
+        **values,  # type: ignore[arg-type]
     )
 
 
@@ -90,6 +112,9 @@ class Tenant:
         conn = connect(path)
         migrate(conn)
         self.store = Store(conn)
+        default_interval = bot_defaults(shared).reminder_interval
+        if default_interval is not None:  # cycles from before intervals were per user
+            self.store.fill_cycle_interval(default_interval)
         telegram_id = user.telegram_id
         email = mailer_factory is not None and user.email_sealed is not None
         self.settings = user_settings(user, shared, email=email)

@@ -16,6 +16,7 @@ from canvas_tracker.hub.registry import open_registry
 from canvas_tracker.hub.secretbox import SecretBox, generate_key
 from canvas_tracker.hub.signup import Signup
 from canvas_tracker.notify.base import FakeNotifier, NotifyError
+from canvas_tracker.render import copy
 from canvas_tracker.render.message import RenderedMessage
 from canvas_tracker.sources.canvas_client import CanvasClient
 from tests.factories import NOW
@@ -168,3 +169,7 @@ async def sign_up(
         await env.signup.choice(user, kind, value)
     user = env.hub.registry.get_user(telegram_id)
     assert user is not None and user.status == "active", user
+
+
+# The sign-up intro with the bot's default rhythm (build_hub uses no overrides).
+DEFAULT_INTRO = copy.SIGNUP_INTRO.format(interval="2 hours", window="24 hours")

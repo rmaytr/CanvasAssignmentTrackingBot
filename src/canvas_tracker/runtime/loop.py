@@ -137,7 +137,7 @@ class Runtime:
         )
 
         if result.open_cycle_at is not None:
-            self.store.open_cycle(result.open_cycle_at)
+            self.store.open_cycle(result.open_cycle_at, self.settings.reminder_interval, now=now)
         if result.close_cycle:
             self.store.close_cycle(now)
 

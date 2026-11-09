@@ -38,6 +38,9 @@ _UPDATABLE = frozenset(
         "email_code_expires_at",
         "email_code_sent_at",
         "email_code_attempts",
+        "reminder_interval_minutes",
+        "reminder_window_hours",
+        "digest_lookahead_days",
     }
 )
 
@@ -64,6 +67,10 @@ class User:
     email_code_sent_at: datetime | None = None
     email_code_attempts: int = 0
     last_seen_at: datetime | None = None
+    # The user's reminder rhythm; None means the bot-wide default. Interval 0 means off.
+    reminder_interval_minutes: int | None = None
+    reminder_window_hours: int | None = None
+    digest_lookahead_days: int | None = None
 
 
 def _user(row: sqlite3.Row) -> User:
@@ -90,6 +97,9 @@ def _user(row: sqlite3.Row) -> User:
         email_code_sent_at=from_db(row["email_code_sent_at"]),
         email_code_attempts=row["email_code_attempts"],
         last_seen_at=from_db(row["last_seen_at"]),
+        reminder_interval_minutes=row["reminder_interval_minutes"],
+        reminder_window_hours=row["reminder_window_hours"],
+        digest_lookahead_days=row["digest_lookahead_days"],
     )
 
 

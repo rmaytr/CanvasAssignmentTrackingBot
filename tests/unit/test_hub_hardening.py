@@ -16,7 +16,7 @@ from canvas_tracker.render.message import item_callback
 from canvas_tracker.runtime.sync import SyncOutcome
 from canvas_tracker.store.repo import LAST_SYNC_ERROR
 from tests.factories import NOW
-from tests.hub_helpers import BAD_TOKEN, GOOD_TOKEN, HubEnv, build_hub, sign_up
+from tests.hub_helpers import BAD_TOKEN, DEFAULT_INTRO, GOOD_TOKEN, HubEnv, build_hub, sign_up
 from tests.integration.sim_env import ScenarioItem
 from tests.tg_helpers import callback_update, context, message_update, mock_bot
 
@@ -160,7 +160,7 @@ async def test_stalled_signups_are_removed_and_free_their_slot(tmp_path: Path) -
     assert env.hub.registry.get_user(1) is not None  # active users stay
 
     late = env.hub.registry.create_invite(env.clock.now)
-    assert texts(await env.signup.start(9, "Late", late)) == [copy.SIGNUP_INTRO, copy.ASK_URL]
+    assert texts(await env.signup.start(9, "Late", late)) == [DEFAULT_INTRO, copy.ASK_URL]
 
 
 async def test_the_owner_and_active_users_are_never_pruned(tmp_path: Path) -> None:
@@ -179,7 +179,7 @@ async def test_the_bot_full_check_prunes_first(tmp_path: Path) -> None:
     await at_token_step(env, 5)
     env.clock.now = NOW + timedelta(days=8)
     code = env.hub.registry.create_invite(env.clock.now)
-    assert texts(await env.signup.start(9, "New", code)) == [copy.SIGNUP_INTRO, copy.ASK_URL]
+    assert texts(await env.signup.start(9, "New", code)) == [DEFAULT_INTRO, copy.ASK_URL]
     assert env.hub.registry.get_user(5) is None
 
 

@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
+from canvas_tracker.render import copy
+
 TELEGRAM_LIMIT = 4096
 _TAG_RE = re.compile(r"<[^>]+>")
 
@@ -37,6 +39,17 @@ def safe_link(url: str | None, canvas_host: str) -> str | None:
     if parts.scheme != "https" or (parts.hostname or "").lower() != canvas_host.lower():
         return None
     return url
+
+
+def format_span(span: timedelta) -> str:
+    """A settings-style length of time: "45 minutes", "2 hours", "48 hours", "14 days"."""
+    minutes = int(span.total_seconds() // 60)
+    if minutes % (24 * 60) == 0 and minutes >= 3 * 24 * 60:
+        return copy.SPAN_DAYS.format(n=minutes // (24 * 60))
+    if minutes % 60 == 0:
+        hours = minutes // 60
+        return copy.SPAN_HOUR if hours == 1 else copy.SPAN_HOURS.format(n=hours)
+    return copy.SPAN_MINUTES.format(n=minutes)
 
 
 def clock(instant: datetime, tz: ZoneInfo) -> str:

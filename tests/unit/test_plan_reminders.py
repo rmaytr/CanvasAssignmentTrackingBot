@@ -176,3 +176,14 @@ def test_pause_mutes_all_alerts() -> None:
         pause_until=NOW + timedelta(hours=1),
     )
     assert plan_alerts(NOW, snap, S) == ()
+
+
+def test_snooze_end_is_not_doubled_by_a_new_urgent_alert() -> None:
+    """Regression: an item whose snooze ended close to its deadline got both alerts."""
+    item = make_item(due_in=timedelta(minutes=50), snoozed_until=NOW - timedelta(minutes=1))
+    snap = make_snapshot(
+        [item],
+        cycle=cycle_at(NOW - timedelta(minutes=30)),
+        last_reminded_at={item.ref: NOW - timedelta(hours=2)},
+    )
+    assert [s.kind for s in plan_alerts(NOW, snap, S)] == [SendKind.SNOOZE_END]

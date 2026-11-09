@@ -7,7 +7,13 @@ from datetime import datetime, timedelta
 from canvas_tracker.domain.models import Item, Send, SendKind, Settings, Snapshot
 from canvas_tracker.render import copy
 from canvas_tracker.render.digest import render_digest
-from canvas_tracker.render.format import TELEGRAM_LIMIT, clock, format_due, format_left
+from canvas_tracker.render.format import (
+    TELEGRAM_LIMIT,
+    clock,
+    format_due,
+    format_left,
+    format_span,
+)
 from canvas_tracker.render.items import default_stale, heading, link_for, stale_note, title_html
 from canvas_tracker.render.message import Button, RenderedMessage, item_callback
 
@@ -124,7 +130,7 @@ def render_send(
         return [RenderedMessage(message.text + note, message.keyboard)]
     if send.kind is SendKind.REMINDER:
         template = copy.REMINDER_HEADERS[_slot_number(send.key) % len(copy.REMINDER_HEADERS)]
-        header = template.format(count=len(items))
+        header = template.format(count=len(items), window=format_span(settings.reminder_window))
     else:
         header = _HEADERS[send.kind]
     return _list_messages(header + note, items, snap, now, settings)

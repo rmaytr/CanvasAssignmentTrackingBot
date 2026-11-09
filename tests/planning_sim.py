@@ -39,7 +39,7 @@ def snapshot_at(
 
 def simulate(
     items_by_time: ItemsAt,
-    settings: Settings,
+    settings_or_at: Settings | Callable[[datetime], Settings],
     start: datetime,
     end: datetime,
     step: timedelta = timedelta(seconds=60),
@@ -52,6 +52,7 @@ def simulate(
     A key in ``crash_on`` is "sent but not recorded" once, modelling a crash
     between sending and marking it sent. With ``replay_check``, every step is
     re-planned after applying its results and must produce no sends.
+    ``settings_or_at`` may be a function of time, to model a user changing settings.
     """
     sent: set[str] = set()
     last: dict[str, datetime] = {}
@@ -60,10 +61,11 @@ def simulate(
     log: list[tuple[datetime, Send]] = []
     t = start
     while t < end:
+        settings = settings_or_at(t) if callable(settings_or_at) else settings_or_at
         items = items_by_time(t)
         result = plan(t, snapshot_at(t, items, sent, last, cycle, auth_failed_since), settings)
         if result.open_cycle_at is not None:
-            cycle = Cycle(anchor=result.open_cycle_at)
+            cycle = Cycle(anchor=result.open_cycle_at, interval=settings.reminder_interval)
         if result.close_cycle:
             cycle = None
         for send in result.sends:
