@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta
 from typing import Any
@@ -84,6 +85,11 @@ def digest_cmd(deps: BotDeps) -> Handler:
 
 def sync_cmd(deps: BotDeps) -> Handler:
     async def handler(update: Update, _context: Any) -> None:
+        wait = deps.sync_wait()
+        if wait is not None:
+            seconds = max(1, math.ceil(wait.total_seconds()))
+            await _reply_text(update, copy.SYNC_TOO_SOON.format(seconds=seconds))
+            return
         outcome = await deps.sync.sync(deps.clock())
         if outcome is SyncOutcome.OK:
             snap = deps.store.snapshot(deps.hidden_courses)

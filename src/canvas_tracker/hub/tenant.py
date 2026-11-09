@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -80,6 +80,8 @@ class Tenant:
         client_factory: ClientFactory,
         item_retention: timedelta,
         mailer_factory: MailerFactory | None = None,
+        host_check: Callable[[], Awaitable[bool]] | None = None,
+        sync_wait: Callable[[], timedelta | None] | None = None,
     ) -> None:
         assert user.canvas_base_url is not None  # noqa: S101 - only active users get a tenant
         self.telegram_id = user.telegram_id
@@ -115,7 +117,9 @@ class Tenant:
             return secret
 
         self.client = client_factory(user.canvas_base_url, token)
-        self.sync = SyncService(self.client, self.store, user.canvas_base_url)
+        self.sync = SyncService(
+            self.client, self.store, user.canvas_base_url, host_check=host_check
+        )
         self.runtime = Runtime(
             store=self.store,
             sync=self.sync,
@@ -127,7 +131,13 @@ class Tenant:
             item_retention=item_retention,
             mailer=mailer,
         )
-        self.deps = BotDeps(store=self.store, settings=self.settings, clock=clock, sync=self.sync)
+        self.deps = BotDeps(
+            store=self.store,
+            settings=self.settings,
+            clock=clock,
+            sync=self.sync,
+            sync_wait=sync_wait or (lambda: None),
+        )
         self._lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self.closed = False

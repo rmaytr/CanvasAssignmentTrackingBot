@@ -178,6 +178,7 @@ class Snapshot:
     pause_until: datetime | None
     last_successful_sync_at: datetime | None
     auth_failed_since: datetime | None
+    button_salt: str = ""  # embedded in item buttons; see render.message.item_callback
 
 
 class SendKind(StrEnum):

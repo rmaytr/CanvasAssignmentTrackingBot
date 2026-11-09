@@ -16,6 +16,7 @@ from canvas_tracker.hub.handlers import (
 )
 from canvas_tracker.hub.registry import HUB_LAST_TICK_AT
 from canvas_tracker.render import copy
+from canvas_tracker.render.message import item_callback
 from tests.factories import NOW
 from tests.hub_helpers import GOOD_TOKEN, OTHER_TOKEN, build_hub, sign_up
 from tests.integration.sim_env import ScenarioItem
@@ -108,13 +109,14 @@ async def test_friends_only_see_and_touch_their_own_items(tmp_path: Path) -> Non
     assert ana_item.db_id is not None
     bogus = ana_item.db_id + 1000 if ana_item.db_id == ben_item.db_id else ana_item.db_id
     bot = mock_bot()
-    await item_button(env.signup)(callback_update(f"d:{bogus}", user_id=5, bot=bot), context())
+    stolen = item_callback("d", bogus, ben.store.button_salt())
+    await item_button(env.signup)(callback_update(stolen, user_id=5, bot=bot), context())
     assert bot.answer_callback_query.await_args.kwargs.get("text") == copy.ITEM_GONE
     after = ana.store.get_item(ana_item.db_id)
     assert after is not None and after.bot_done_at is None
 
     bot = mock_bot()
-    data = f"d:{ben_item.db_id}"
+    data = item_callback("d", ben_item.db_id or 0, ben.store.button_salt())
     await item_button(env.signup)(callback_update(data, user_id=5, bot=bot), context())
     done = ben.store.get_item(ben_item.db_id or 0)
     assert done is not None and done.bot_done_at is not None

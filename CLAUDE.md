@@ -27,4 +27,4 @@ uv run pip-audit                # CI fails on known vulnerabilities
 ## Known open items
 
 - Instructure's API policy disfavours users pasting personal tokens into a shared app; public launch needs OAuth or the calendar-feed (iCal) mode (roadmap in README).
-- Deferred minors: no rate limit on token attempts or `/sync`; DNS rebinding only checked at sign-up; old buttons can act on a new item after `/disconnect` and re-join; abandoned sign-ups use `MAX_USERS` slots; sign-up intro hard-codes "2 hours / 14 days".
+- Deferred minors: sign-up intro hard-codes "2 hours / 14 days"; the public-address check runs before each request batch, not at connect time (httpx resolves again, so a sub-second rebind is still possible; pinning the IP would close it).

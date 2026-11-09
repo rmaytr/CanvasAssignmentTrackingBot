@@ -5,7 +5,7 @@ import pytest
 
 from canvas_tracker.domain.models import SendKind
 from canvas_tracker.store.db import connect, migrate
-from canvas_tracker.store.repo import LAST_TICK_AT, Store
+from canvas_tracker.store.repo import BUTTON_SALT, BUTTONS_UNSALTED_OK, LAST_TICK_AT, Store
 from tests.factories import NOW
 
 
@@ -18,8 +18,8 @@ def store(tmp_path: Path) -> Store:
 
 def test_migrate_is_idempotent_and_uses_wal(tmp_path: Path) -> None:
     conn = connect(tmp_path / "bot.db")
-    assert migrate(conn) == 2
-    assert migrate(conn) == 2
+    assert migrate(conn) == 3
+    assert migrate(conn) == 3
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -67,3 +67,42 @@ def test_parts_sent_survive_a_failed_attempt(store: Store) -> None:  # review I5
     store.mark_failed(k, "NetworkError")
     assert store.claim(k, SendKind.REMINDER, [], NOW + timedelta(minutes=3))
     assert store.parts_sent(k) == 1
+
+
+def _at_version_2(path: Path) -> None:
+    """A database as it was before migration 0003 (button salts)."""
+    from importlib.resources import files
+
+    conn = connect(path)
+    for name in ("0001_init.sql", "0002_parts_sent.sql"):
+        sql = files("canvas_tracker.store.migrations").joinpath(name).read_text("utf-8")
+        conn.executescript(f"BEGIN;\n{sql}\nCOMMIT;")
+    conn.execute("PRAGMA user_version = 2")
+    conn.execute("INSERT INTO state (key, value) VALUES ('last_sync_attempt_at', 'x')")
+    conn.close()
+
+
+def test_new_database_gets_a_random_salt_and_refuses_unsalted_buttons(tmp_path: Path) -> None:
+    salts = set()
+    for name in ("a.db", "b.db"):
+        conn = connect(tmp_path / name)
+        migrate(conn)
+        store = Store(conn)
+        salt = store.get_state(BUTTON_SALT)
+        assert salt is not None and len(salt) == 8 and set(salt) <= set("0123456789abcdef")
+        assert store.get_state(BUTTONS_UNSALTED_OK) is None
+        assert store.accepts_button(salt) and not store.accepts_button(None)
+        assert store.snapshot().button_salt == salt
+        salts.add(salt)
+    assert len(salts) == 2
+
+
+def test_existing_database_keeps_accepting_its_old_unsalted_buttons(tmp_path: Path) -> None:
+    _at_version_2(tmp_path / "old.db")
+    conn = connect(tmp_path / "old.db")
+    assert migrate(conn) == 3
+    store = Store(conn)
+    salt = store.button_salt()
+    assert len(salt) == 8 and store.get_state(BUTTONS_UNSALTED_OK) == "1"
+    assert store.accepts_button(None) and store.accepts_button(salt)
+    assert not store.accepts_button("00000000" if salt != "00000000" else "11111111")

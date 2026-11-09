@@ -63,6 +63,7 @@ class User:
     email_code_expires_at: datetime | None = None
     email_code_sent_at: datetime | None = None
     email_code_attempts: int = 0
+    last_seen_at: datetime | None = None
 
 
 def _user(row: sqlite3.Row) -> User:
@@ -88,6 +89,7 @@ def _user(row: sqlite3.Row) -> User:
         email_code_expires_at=from_db(row["email_code_expires_at"]),
         email_code_sent_at=from_db(row["email_code_sent_at"]),
         email_code_attempts=row["email_code_attempts"],
+        last_seen_at=from_db(row["last_seen_at"]),
     )
 
 
@@ -115,9 +117,10 @@ class Registry:
         self, telegram_id: int, name: str, *, now: datetime, is_owner: bool = False
     ) -> User:
         self.conn.execute(
-            "INSERT INTO users (telegram_id, status, step, display_name, is_owner, created_at) "
-            "VALUES (?, 'onboarding', 'url', ?, ?, ?)",
-            (telegram_id, name[:64], int(is_owner), to_db(now)),
+            "INSERT INTO users "
+            "(telegram_id, status, step, display_name, is_owner, created_at, last_seen_at) "
+            "VALUES (?, 'onboarding', 'url', ?, ?, ?, ?)",
+            (telegram_id, name[:64], int(is_owner), to_db(now), to_db(now)),
         )
         user = self.get_user(telegram_id)
         assert user is not None  # noqa: S101
@@ -148,6 +151,21 @@ class Registry:
             f"UPDATE users SET {assignments} WHERE telegram_id = ?",  # noqa: S608 - checked keys
             [*values.values(), telegram_id],
         )
+
+    def touch(self, telegram_id: int, now: datetime) -> None:
+        """Note that the user just did something (keeps a sign-up from counting as abandoned)."""
+        self.conn.execute(
+            "UPDATE users SET last_seen_at = ? WHERE telegram_id = ?", (to_db(now), telegram_id)
+        )
+
+    def stale_signups(self, before: datetime) -> list[int]:
+        """Onboarding users (never the owner) whose last activity is older than ``before``."""
+        rows = self.conn.execute(
+            "SELECT telegram_id FROM users WHERE status = 'onboarding' AND is_owner = 0 "
+            "AND COALESCE(last_seen_at, created_at) < ? ORDER BY telegram_id",
+            (to_db(before),),
+        )
+        return [int(r["telegram_id"]) for r in rows]
 
     def delete_user(self, telegram_id: int) -> None:
         self.conn.execute("DELETE FROM users WHERE telegram_id = ?", (telegram_id,))

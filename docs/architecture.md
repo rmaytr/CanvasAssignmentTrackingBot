@@ -108,7 +108,7 @@ flowchart LR
 ```
 
 - Database paths are built from the integer Telegram ID: `DATA_DIR/users/<id>.db`.
-- Button callbacks carry only a row ID (`d:42`). The row is looked up in the **sender's** own file, so a forged or forwarded button can never touch someone else's data.
+- Button callbacks carry only a row ID and that file's random salt (`d:42:9f3a0c1b`). The row is looked up in the **sender's** own file, so a forged or forwarded button can never touch someone else's data. The salt is made when the file is created, so after `/disconnect` and re-joining (a new file whose IDs start again at 1) an old button answers "this button is from before you reconnected" instead of acting on a new item. Buttons sent before salts existed (`d:42`) still work in files that existed then, and are refused by files created later.
 - `/users` reads only sync health (last sync, token state) from each tenant, never items.
 
 ## 4. One minute in the life of the bot
@@ -178,7 +178,7 @@ A crash between delivering a message and recording it can cause at most one dupl
 
 ## 6. Sign-up and settings state machine
 
-The conversation state is stored in the registry (`users.step`), so a restart resumes exactly where the user left off.
+The conversation state is stored in the registry (`users.step`), so a restart resumes exactly where the user left off. A sign-up that gets no answer for **7 days** (`users.last_seen_at`) is deleted on the next minute's tick, and the person is told to ask for a new invite, so stalled sign-ups don't hold `MAX_USERS` slots. The owner and active users are never removed this way.
 
 ```mermaid
 stateDiagram-v2
@@ -207,7 +207,7 @@ stateDiagram-v2
 | Step | Accepts | Refuses |
 |---|---|---|
 | Canvas address | `school.instructure.com`, any Canvas page URL, `https://…:443` | `http`, IP addresses, other ports, `localhost`/`.local`/`.internal`, hosts resolving to private addresses |
-| Token | Pasted with stray spaces or newlines | Anything Canvas rejects, or that can't read the To Do list |
+| Token | Pasted with stray spaces or newlines | Anything Canvas rejects, or that can't read the To Do list; more than 5 checks in 15 minutes ("wait N min") |
 | Time zone | `Chicago`, `Pacific`, `EST`, `Pacific Standard Time`, `Europe/Berlin`, or a button | Unknown names; legacy fixed-offset zones |
 | Morning time | `8`, `7:30 am`, `19:00`, `7.45 AM`, or a button | After 8 PM; invalid times |
 | Quiet hours | `23:00-07:00`, `11pm - 7am`, `12 am to 8 am`, `off`, or a button | Ranges that would hide the morning list |
@@ -234,6 +234,7 @@ erDiagram
         text quiet "HH:MM-HH:MM | off"
         text pending_base_url "new host awaiting a token"
         text created_at
+        text last_seen_at "last sign-up answer (abandoned after 7 days)"
     }
     INVITES {
         text code_hash PK "SHA-256 of the code"
@@ -321,6 +322,8 @@ A due-date change clears the bot's flags, which is how extensions re-open items.
 | What fails | What the user sees | What the bot does |
 |---|---|---|
 | Canvas down or slow | Messages carry a ⚠️ "based on data from…" note | Retries with backoff; each sync bounded to 60 s; other users unaffected |
+| Canvas host starts resolving to a private address (DNS rebinding) | Same as Canvas down | The host is re-checked before every sync and token check (a pass is cached for 5 min); while it fails nothing is sent to it and `last_sync_error` is `CanvasHostRefused` |
+| Someone spams `/sync` or token attempts | "You just synced, try again in N s" / "wait N min" | `/sync` at most once a minute per user; at most 5 token checks per user per 15 minutes (in memory, reset on restart) |
 | Canvas rejects the token | One 🔑 message with steps | Re-checks every 6 h, or immediately after a new token is pasted via `/settings` |
 | Telegram rate-limits | A slight delay | Honors `RetryAfter`, then retries the claim on the next tick |
 | Crash or restart mid-send | At most one duplicate message | Claims and per-part progress resume the work |
@@ -339,7 +342,7 @@ Bot-wide settings come from the environment ([`.env.example`](../.env.example)).
 | `TOKEN_KEY_FILE` | *(required)* | File with the Fernet key that encrypts Canvas tokens (`python -m canvas_tracker genkey`) |
 | `OWNER_TELEGRAM_ID` | empty | Owner's Telegram ID; if empty, the owner claims the bot with a one-time code from the log |
 | `DATA_DIR` | `/data` | Where `registry.db` and `users/*.db` live |
-| `MAX_USERS` | `25` | Sign-up cap (owner included) |
+| `MAX_USERS` | `25` | Sign-up cap (owner included); sign-ups idle for 7 days stop counting |
 | `DIGEST_LOOKAHEAD_DAYS` | `14` | How far ahead the morning list looks |
 | `REMINDER_WINDOW_HOURS` | `24` | "Due soon" window that starts the reminder cycle |
 | `REMINDER_INTERVAL_MINUTES` | `120` | Time between reminders (minimum 30) |

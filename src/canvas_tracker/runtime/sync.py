@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from enum import StrEnum
 
@@ -37,6 +38,10 @@ SYNC_INTERVAL_QUIET = timedelta(minutes=30)
 ENRICH_INTERVAL = timedelta(hours=12)
 SYNC_TIMEOUT_S = 60.0  # bounds a hanging Canvas, so the tick and /sync stay responsive
 ENRICH_TIMEOUT_S = 120.0
+
+
+class CanvasHostRefused(CanvasUnavailable):
+    """The Canvas host now resolves to a private address, so the bot won't call it."""
 
 
 class SyncOutcome(StrEnum):
@@ -70,8 +75,10 @@ class SyncService:
         store: Store,
         base_url: str,
         timeout_s: float | None = None,
+        host_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
         self.client = client
+        self.host_check = host_check
         self.store = store
         self.base_url = base_url
         self.sync_timeout_s = SYNC_TIMEOUT_S if timeout_s is None else timeout_s
@@ -95,8 +102,21 @@ class SyncService:
         self.store.set_time(AUTH_FAILED_SINCE, None)
         self.store.set_state(LAST_SYNC_ERROR, None)
 
+    async def _host_ok(self) -> bool:
+        """The Canvas host still resolves only to public addresses (checked at sign-up and
+        again here, so a later DNS change can't point the bot at this server)."""
+        if self.host_check is None:
+            return True
+        try:
+            return await self.host_check()
+        except Exception:  # a broken check refuses rather than lets the request through
+            log.exception("canvas host check failed")
+            return False
+
     async def sync(self, now: datetime) -> SyncOutcome:
         self.store.set_time(LAST_SYNC_ATTEMPT_AT, now)
+        if not await self._host_ok():
+            return self._failed(now, CanvasHostRefused("Canvas host resolves privately"))
         try:
             async with asyncio.timeout(self.sync_timeout_s):
                 fetch = await fetch_planner(
@@ -122,6 +142,8 @@ class SyncService:
         return SyncOutcome.OK
 
     async def enrich(self, now: datetime) -> SyncOutcome:
+        if not await self._host_ok():
+            return SyncOutcome.UNAVAILABLE
         try:
             async with asyncio.timeout(self.enrich_timeout_s):
                 enrichment = await fetch_enrichment(self.client)

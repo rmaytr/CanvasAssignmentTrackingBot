@@ -40,9 +40,10 @@ from canvas_tracker.hub.registry import User
 from canvas_tracker.hub.signup import TOKEN_STEPS, Reply, Signup
 from canvas_tracker.notify.telegram import to_markup
 from canvas_tracker.render import copy
+from canvas_tracker.render.message import ITEM_CALLBACK_PATTERN
 
 Handler = Callable[[Update, Any], Coroutine[Any, Any, None]]
-ITEM_CALLBACK = re.compile(r"^[dsux]:\d+$")
+ITEM_CALLBACK = re.compile(ITEM_CALLBACK_PATTERN)
 SETUP_CALLBACK = re.compile(r"^(su|set|bye|rm):")
 
 
@@ -189,7 +190,11 @@ def on_text(signup: Signup) -> Handler:
             if token_like:
                 notice = copy.TOKEN_DELETED if deleted else copy.TOKEN_DELETE_FAILED
                 await send_replies(update, [Reply(notice)])
-            if user.step in TOKEN_STEPS and looks_like_token(text):
+            if (
+                user.step in TOKEN_STEPS
+                and looks_like_token(text)
+                and signup.token_wait(user) is None
+            ):
                 await send_replies(update, [Reply(copy.TOKEN_CHECKING)])
         await send_replies(update, await signup.text(user, text))
 

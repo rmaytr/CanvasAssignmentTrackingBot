@@ -5,6 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 MAX_CALLBACK_BYTES = 64
+# Item buttons: "<action>:<item id>[:<salt>]", e.g. "d:42:9f3a0c1b". The salt is the
+# database's own (Snapshot.button_salt); older buttons have none. bot/callbacks.py and
+# hub/handlers.py match against this one pattern.
+ITEM_CALLBACK_PATTERN = r"^([dsux]):(\d+)(?::([0-9a-f]{8}))?$"
+
+
+def item_callback(action: str, db_id: int, salt: str = "") -> str:
+    return f"{action}:{db_id}:{salt}" if salt else f"{action}:{db_id}"
 
 
 @dataclass(frozen=True, slots=True)

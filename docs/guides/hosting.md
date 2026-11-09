@@ -85,7 +85,9 @@ Owner commands:
 | `/remove 3` | Remove user 3 from the `/users` list: the bot asks you to confirm by name, then deletes their data and tells them |
 
 Up to 25 people can sign up; change `MAX_USERS` in `~/CanvasAssignmentTrackingBot/.env`
-and run the install command again to apply it.
+and run the install command again to apply it. A sign-up that's left unfinished for 7 days
+is cleared automatically (the person is told to ask you for a new link), so it doesn't
+keep a spot.
 
 ## Day to day
 

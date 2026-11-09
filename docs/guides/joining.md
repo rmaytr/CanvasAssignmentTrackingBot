@@ -52,7 +52,7 @@ That's it: "✅ All set!".
 | `/today` | What's due today, plus anything urgent or overdue |
 | `/week` | The next 7 days |
 | `/digest` | The morning list, right now |
-| `/sync` | Check Canvas right now |
+| `/sync` | Check Canvas right now (once a minute; the bot also checks every 10 minutes) |
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
 | `/settings` | Change time zone, morning time, quiet hours, Canvas token or Canvas address |
 | `/email you@school.edu` | Also get the morning list by email, plus a heads-up 2 hours before each deadline (`/email off` stops it) |

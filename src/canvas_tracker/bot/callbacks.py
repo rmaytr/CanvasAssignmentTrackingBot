@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import re
 from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
@@ -15,17 +16,25 @@ from canvas_tracker.bot.deps import BotDeps
 from canvas_tracker.domain.models import SNOOZE_LENGTH, SNOOZE_MIN_LEFT, UNDO_WINDOW
 from canvas_tracker.render import copy
 from canvas_tracker.render.format import clock
+from canvas_tracker.render.message import ITEM_CALLBACK_PATTERN, item_callback
 
 Action = Literal["d", "s", "u", "x"]
-_CALLBACK_RE = re.compile(r"^([dsux]):(\d+)$")
+_CALLBACK_RE = re.compile(ITEM_CALLBACK_PATTERN)
 
 
-def parse_callback(data: str) -> tuple[Action, int] | None:
+@dataclass(frozen=True, slots=True)
+class ItemPress:
+    action: Action
+    db_id: int
+    salt: str | None  # None for buttons sent before salts existed
+
+
+def parse_callback(data: str) -> ItemPress | None:
     match = _CALLBACK_RE.match(data)
     if match is None:
         return None
     action: Action = match.group(1)  # type: ignore[assignment]
-    return action, int(match.group(2))
+    return ItemPress(action, int(match.group(2)), match.group(3))
 
 
 def snooze_until(now: datetime, due_at: datetime) -> datetime | None:
@@ -40,10 +49,12 @@ def _number(label: str) -> str:
     return tail if tail.isdigit() else ""
 
 
-def _undo_keyboard(markup: InlineKeyboardMarkup | None, db_id: int) -> InlineKeyboardMarkup | None:
+def _undo_keyboard(
+    markup: InlineKeyboardMarkup | None, db_id: int, salt: str
+) -> InlineKeyboardMarkup | None:
     if markup is None:
         return None
-    done, snooze = f"d:{db_id}", f"s:{db_id}"
+    done, snooze = item_callback("d", db_id, salt), item_callback("s", db_id, salt)
     rows: list[list[InlineKeyboardButton]] = []
     for row in markup.inline_keyboard:
         datas = [b.callback_data for b in row]
@@ -52,7 +63,8 @@ def _undo_keyboard(markup: InlineKeyboardMarkup | None, db_id: int) -> InlineKey
             continue
         button = next(b for b in row if b.callback_data == done)
         undo = InlineKeyboardButton(
-            copy.UNDO_BUTTON.format(n=_number(button.text)), callback_data=f"u:{db_id}"
+            copy.UNDO_BUTTON.format(n=_number(button.text)),
+            callback_data=item_callback("u", db_id, salt),
         )
         mine = all(b.callback_data in (done, snooze) or b.url is not None for b in row)
         if mine:  # a reminder row for just this item: replace the whole row
@@ -68,18 +80,22 @@ def on_callback(deps: BotDeps) -> Callable[[Update, Any], Coroutine[Any, Any, No
         if query is None:
             return
         parsed = parse_callback(query.data or "")
-        item = deps.store.get_item(parsed[1]) if parsed is not None else None
+        if parsed is not None and not deps.store.accepts_button(parsed.salt):
+            # From an earlier sign-up's database: its item ids mean something else here.
+            await query.answer(copy.BUTTON_STALE)
+            return
+        item = deps.store.get_item(parsed.db_id) if parsed is not None else None
         if parsed is None or item is None or item.gone_at is not None:
             await query.answer(copy.ITEM_GONE)
             return
-        action, db_id = parsed
+        action, db_id, salt = parsed.action, parsed.db_id, parsed.salt or ""
         now = deps.clock()
         if action == "d":
             deps.store.set_bot_done(db_id, now)
             await query.answer(copy.DONE)
             message = query.message
             markup = getattr(message, "reply_markup", None)
-            new_markup = _undo_keyboard(markup, db_id)
+            new_markup = _undo_keyboard(markup, db_id, salt)
             if new_markup is not None:
                 # The message may be too old to edit; the item is marked done either way.
                 with contextlib.suppress(TelegramError):

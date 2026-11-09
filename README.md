@@ -242,7 +242,8 @@ Canvas tokens are as powerful as a password, so the bot treats them that way:
 - [x] Friends mode: shared invite-only bot, sign-up in chat, encrypted tokens, one-command install (**v0.2**)
 - [ ] Beta feedback: tune ranking thresholds on real use; contract tests on scrubbed real Canvas data
 - [ ] **Calendar-feed mode** for schools that block personal tokens (no token needed)
-- [ ] OAuth with participating schools and stronger protection for a public release (per-user key wrapping, rate limiting, monitoring)
+- [ ] OAuth with participating schools and stronger protection for a public release (per-user key wrapping, monitoring)
+- [x] Hardening: rate limits on token checks and `/sync`, abandoned sign-ups free their slot, buttons tied to their database, Canvas host re-checked before each sync
 - [x] Optional email: the morning list and a heads-up 2 hours before each deadline (any SMTP provider)
 - [ ] Per-user reminder rhythm, localization (all copy already lives in one module)
 

@@ -33,6 +33,8 @@ AUTH_FAILED_SINCE = "auth_failed_since"
 LAST_TICK_AT = "last_tick_at"
 LAST_ENRICHMENT_AT = "last_enrichment_at"
 LAST_PURGE_AT = "last_purge_at"
+BUTTON_SALT = "button_salt"
+BUTTONS_UNSALTED_OK = "buttons_unsalted_ok"
 
 CLAIM_STALE_AFTER = timedelta(minutes=2)
 _TS_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -420,7 +422,20 @@ class Store:
             pause_until=self.get_time(PAUSE_UNTIL),
             last_successful_sync_at=self.get_time(LAST_SUCCESSFUL_SYNC_AT),
             auth_failed_since=self.get_time(AUTH_FAILED_SINCE),
+            button_salt=self.button_salt(),
         )
+
+    def button_salt(self) -> str:
+        """This database's random button salt (set by migration 0003)."""
+        return self.get_state(BUTTON_SALT) or ""
+
+    def accepts_button(self, salt: str | None) -> bool:
+        """Whether a button carrying ``salt`` was made from this database. Buttons without
+        one predate salts and are only trusted by databases that existed back then."""
+        own = self.button_salt()
+        if salt is None:
+            return not own or self.get_state(BUTTONS_UNSALTED_OK) == "1"
+        return salt == own
 
     def purge(
         self,

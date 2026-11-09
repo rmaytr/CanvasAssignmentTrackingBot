@@ -107,6 +107,7 @@ UNDONE = "Undone ↩️"
 UNDO_EXPIRED = "Too late to undo. It reopens by itself if its due date changes."
 STOPPED = "No more reminders for this one 🔕"
 ITEM_GONE = "That item is no longer on your list."
+BUTTON_STALE = "This button is from before you reconnected. Send /today for fresh buttons."
 UNDO_BUTTON = "✔️ {n} done · ↩️ Undo"
 
 # Views and commands
@@ -140,6 +141,7 @@ SYNC_FAILED = {
     "unavailable": "✗ Couldn't reach Canvas right now. The bot keeps retrying.",
     "protocol_error": "✗ Canvas sent an unexpected response. The bot keeps retrying.",
 }
+SYNC_TOO_SOON = "⏳ You just synced. Try /sync again in {seconds} s (the bot also syncs by itself)."
 
 # Stale data (PRD anti-goal: never present stale data as current)
 STALE_NOTE = "⚠️ Based on Canvas data from {since}. If you've already submitted, ignore this."
@@ -148,6 +150,10 @@ STALE_NOTE_NEVER = "⚠️ Haven't reached Canvas yet, so this may be out of dat
 # Friends mode: sign-up, settings and owner commands
 INVITE_ONLY = "👋 This bot is invite-only. Ask the person who runs it for an invite link."
 BOT_FULL = "Sorry, this bot is full right now. Ask the person who runs it."
+SIGNUP_EXPIRED = (
+    "⌛ Your sign-up wasn't finished within 7 days, so I've cleared it to free the spot. "
+    "To try again, ask the person who runs the bot for a new invite link."
+)
 SIGNUP_INTRO = (
     "👋 Welcome! I'll send you a ranked list of what's due every morning, and a reminder "
     "every 2 hours for anything due within 24 hours, until you submit it.\n\n"
@@ -178,6 +184,10 @@ ASK_TOKEN = (
 BTN_OPEN_SETTINGS = "🔗 Open Canvas settings"
 TOKEN_FORMAT = "That doesn't look like a token. Copy the whole token from Canvas and paste it here."
 TOKEN_CHECKING = "🔐 Checking the token with Canvas…"
+TOKEN_TOO_MANY = (
+    "⏳ That's a lot of token tries in a short time. Please wait {minutes} min, "
+    "then paste the token again."
+)
 TOKEN_PROBLEMS = {
     "rejected": "✗ Canvas rejected that token. Make a new one and paste it here.",
     "unreachable": "✗ I couldn't reach Canvas at {host}. Paste the token again in a minute, "

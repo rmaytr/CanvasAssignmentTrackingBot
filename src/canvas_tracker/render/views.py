@@ -16,7 +16,7 @@ from canvas_tracker.render import copy
 from canvas_tracker.render.digest import BUTTONS_PER_ROW, MAX_DIGEST_BUTTONS, explain, item_score
 from canvas_tracker.render.format import format_due, split_blocks
 from canvas_tracker.render.items import default_stale, heading, stale_banner
-from canvas_tracker.render.message import Button, RenderedMessage
+from canvas_tracker.render.message import Button, RenderedMessage, item_callback
 
 PAUSE_MAX = timedelta(days=7)
 _DURATION_RE = re.compile(r"^(\d{1,4})\s*(m|min|h)$")
@@ -87,7 +87,7 @@ def _list_view(
     if not numbered and not stale:  # never claim "nothing due" from stale data
         blocks += ["", empty]
     buttons = [
-        Button(f"✅ {n}", callback_data=f"d:{item.db_id}")
+        Button(f"✅ {n}", callback_data=item_callback("d", item.db_id, snap.button_salt))
         for n, item in enumerate(numbered, start=1)
         if item.db_id is not None
     ][:MAX_DIGEST_BUTTONS]

@@ -13,7 +13,7 @@ from canvas_tracker.planning.news import is_fresh_announcement
 from canvas_tracker.render import copy
 from canvas_tracker.render.format import clock, format_due, split_blocks
 from canvas_tracker.render.items import default_stale, heading, plain_heading, stale_banner
-from canvas_tracker.render.message import Button, RenderedMessage
+from canvas_tracker.render.message import Button, RenderedMessage, item_callback
 
 MAX_DIGEST_BUTTONS = 96
 BUTTONS_PER_ROW = 4
@@ -198,7 +198,7 @@ def render_digest(
         blocks.append(copy.NOTHING_DUE.format(days=settings.digest_lookahead.days, synced=synced))
 
     buttons = [
-        Button(f"✅ {n}", callback_data=f"d:{item.db_id}")
+        Button(f"✅ {n}", callback_data=item_callback("d", item.db_id, snap.button_salt))
         for n, item in enumerate(numbered, start=1)
         if item.db_id is not None
     ][:MAX_DIGEST_BUTTONS]

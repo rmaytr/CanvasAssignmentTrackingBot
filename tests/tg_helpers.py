@@ -10,6 +10,7 @@ from telegram import Bot, Update
 
 from canvas_tracker.bot.deps import BotDeps
 from canvas_tracker.domain.models import Settings
+from canvas_tracker.render.message import item_callback
 from tests.factories import NOW, make_settings
 from tests.store_helpers import new_store
 
@@ -44,7 +45,10 @@ def message_update(
     return update
 
 
-def callback_update(data: str, user_id: int = 77, bot: AsyncMock | None = None) -> Update:
+def callback_update(
+    data: str, user_id: int = 77, bot: AsyncMock | None = None, salt: str = ""
+) -> Update:
+    """A press of ``data`` on a reminder whose buttons carry ``salt`` (items 1 and 2)."""
     payload: dict[str, Any] = {
         "update_id": 2,
         "callback_query": {
@@ -60,10 +64,10 @@ def callback_update(data: str, user_id: int = 77, bot: AsyncMock | None = None) 
                 "reply_markup": {
                     "inline_keyboard": [
                         [
-                            {"text": "✅ Done 1", "callback_data": "d:1"},
-                            {"text": "💤 2h 1", "callback_data": "s:1"},
+                            {"text": "✅ Done 1", "callback_data": item_callback("d", 1, salt)},
+                            {"text": "💤 2h 1", "callback_data": item_callback("s", 1, salt)},
                         ],
-                        [{"text": "✅ Done 2", "callback_data": "d:2"}],
+                        [{"text": "✅ Done 2", "callback_data": item_callback("d", 2, salt)}],
                     ]
                 },
             },

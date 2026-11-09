@@ -47,6 +47,8 @@ sequenceDiagram
 
 The client only ever **reads**. It sends `GET` requests to `/api/v1/` paths on your own Canvas host, refuses redirects and pagination links to other hosts, and identifies itself with a descriptive `User-Agent`, which Canvas requires.
 
+Before every sync (and every token check) the bot re-checks that your Canvas host still resolves only to public addresses; a passing check is reused for 5 minutes. If the host ever starts pointing at a private address, the bot treats Canvas as unreachable and sends it nothing until that changes. A manual `/sync` works at most once a minute (the bot syncs by itself every 10 minutes anyway).
+
 ## 2. When is something "done"?
 
 The bot mirrors Canvas's own Planner rule, and tightens it in two places: excused work and offline work.
@@ -71,6 +73,7 @@ flowchart TD
 - **A teacher's zero on online work doesn't hide it.** Missing online work stays visible in the ⚠️ OVERDUE section while Canvas still accepts it.
 - **Extensions re-open items.** Your ✅ Done is tied to the due date you tapped it for. If the date moves, the item comes back and any snooze or 🔕 Stop is cleared.
 - **Undo** works for 10 minutes after ✅ Done.
+- **Old buttons stay harmless.** Each button carries a random code tied to your current data. After `/disconnect` and signing up again, buttons on old messages answer "this button is from before you reconnected" instead of acting on a new item.
 
 ## 3. Ranking: the 100-point score
 

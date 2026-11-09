@@ -11,9 +11,14 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Announcements and events are no longer treated as homework.** A course announcement now gets one 📢 message when it's posted, a calendar event gets a 📅 heads-up an hour before it starts, and the morning list shows both under a new *Announcements & events* section. Neither is ever reminded, ranked or reported as overdue.
 
 ### Fixed
+- After `/disconnect` and signing up again, a ✅/💤/🔕 button on an old message could act on a different item in the new account (item numbers start again at 1). Buttons now carry a random code tied to the user's database, and old ones answer "This button is from before you reconnected". Buttons sent before this update keep working for existing users.
+- Sign-ups abandoned part-way no longer hold a `MAX_USERS` slot forever: after 7 days without an answer they're cleared (owner and active users never are), and the person is told to ask for a new invite. Sign-ups already in progress when you update get a full 7 days.
+- The Docker image builds without first downloading the BuildKit `dockerfile:1` frontend from Docker Hub (that download could stall the install).
 - Course announcements (and posts like "Attend the social this Thursday!") were reminded about and reported as ❗ overdue, because Canvas's `announcement` items were treated as assignments.
 
 ### Security
+- At most 5 Canvas token checks per user per 15 minutes (sign-up and `/settings`), then a friendly "wait N min"; `/sync` at most once a minute per user.
+- The "Canvas host resolves only to public addresses" check now also runs before every sync and token check (cached for 5 minutes), not just at sign-up, so a host that is later re-pointed at a private address (DNS rebinding) is refused.
 - Email addresses are stored Fernet-encrypted like Canvas tokens, and only after confirmation. Codes are stored hashed, expire after 15 minutes, lock after 5 wrong tries, and can be requested at most once a minute. SMTP errors are logged by class name only.
 
 ### Upgrading

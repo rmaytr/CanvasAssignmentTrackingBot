@@ -11,10 +11,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from canvas_tracker.bot.pairing import PairingCode
 from canvas_tracker.hub.parsing import is_public_address
+from canvas_tracker.hub.ratelimit import RateLimiter
 from canvas_tracker.hub.registry import HUB_LAST_TICK_AT, OWNER_KEY, Registry, User
 from canvas_tracker.hub.secretbox import SecretBox
 from canvas_tracker.hub.tenant import ClientFactory, MailerFactory, Tenant, user_db_path
@@ -31,6 +33,11 @@ from canvas_tracker.sources.planner import PLANNER_PATH
 log = logging.getLogger(__name__)
 
 VERIFY_TIMEOUT_S = 30.0
+HOST_CHECK_TTL = timedelta(minutes=5)
+SIGNUP_ABANDONED_AFTER = timedelta(days=7)
+TOKEN_CHECKS_PER_WINDOW = 5
+TOKEN_CHECK_WINDOW = timedelta(minutes=15)
+MANUAL_SYNC_WINDOW = timedelta(minutes=1)
 Problem = Literal["rejected", "unreachable", "not_canvas", "no_planner"]
 
 
@@ -52,6 +59,37 @@ async def resolves_publicly(host: str) -> bool:
         return False
     addresses = {str(info[4][0]) for info in infos}
     return bool(addresses) and all(is_public_address(a) for a in addresses)
+
+
+class HostGuard:
+    """Re-checks that a Canvas host still resolves only to public addresses before the
+    bot talks to it, so a host that later points at this server (DNS rebinding) is
+    refused. A passing check is remembered for ``ttl``; a failing one never is, so a
+    host that comes back is used again on the next try."""
+
+    def __init__(
+        self,
+        check: Callable[[str], Awaitable[bool]],
+        clock: Callable[[], datetime],
+        ttl: timedelta = HOST_CHECK_TTL,
+    ) -> None:
+        self.check = check
+        self.clock = clock
+        self.ttl = ttl
+        self._passed: dict[str, datetime] = {}
+
+    async def __call__(self, host: str) -> bool:
+        now = self.clock()
+        passed = self._passed.get(host)
+        if passed is not None and timedelta(0) <= now - passed < self.ttl:
+            return True
+        ok = bool(host) and await self.check(host)
+        if ok:
+            self._passed[host] = now
+        else:
+            self._passed.pop(host, None)
+            log.warning("canvas host refused: it doesn't resolve only to public addresses")
+        return ok
 
 
 def _zone(value: object) -> str | None:
@@ -97,6 +135,9 @@ class Hub:
         self.mailer_factory = mailer_factory
         self.tenants: dict[int, Tenant] = {}
         self.broken: set[int] = set()
+        self.host_guard = HostGuard(host_check, clock)
+        self.token_limiter = RateLimiter(TOKEN_CHECKS_PER_WINDOW, TOKEN_CHECK_WINDOW)
+        self.sync_limiter = RateLimiter(1, MANUAL_SYNC_WINDOW)
 
     # --- owner ---------------------------------------------------------------
 
@@ -109,6 +150,15 @@ class Hub:
     # --- tenants -------------------------------------------------------------
 
     def _build(self, user: User) -> Tenant:
+        telegram_id = user.telegram_id
+        host = urlsplit(user.canvas_base_url or "").hostname or ""
+
+        async def host_ok() -> bool:
+            return await self.host_guard(host)
+
+        def sync_wait() -> timedelta | None:
+            return self.sync_limiter.hit(telegram_id, self.clock())
+
         return Tenant(
             user,
             registry=self.registry,
@@ -120,6 +170,8 @@ class Hub:
             client_factory=self.client_factory,
             item_retention=self.item_retention,
             mailer_factory=self.mailer_factory,
+            host_check=host_ok,
+            sync_wait=sync_wait,
         )
 
     def load(self) -> list[int]:
@@ -181,10 +233,33 @@ class Hub:
             path.with_name(path.name + suffix).unlink(missing_ok=True)
         self.registry.delete_user(telegram_id)
 
+    async def prune_signups(self) -> list[int]:
+        """Forget sign-ups that stalled for 7 days, so they stop taking a MAX_USERS slot.
+        Only onboarding users go; the owner and active users never do. Each one is told
+        (best effort) how to come back."""
+        from canvas_tracker.notify.base import NotifyError
+        from canvas_tracker.render import copy
+        from canvas_tracker.render.message import RenderedMessage
+
+        owner = self.owner_id()
+        stale = self.registry.stale_signups(self.clock() - SIGNUP_ABANDONED_AFTER)
+        removed = [telegram_id for telegram_id in stale if telegram_id != owner]
+        for telegram_id in removed:
+            await self.remove(telegram_id)
+            with contextlib.suppress(NotifyError):
+                await self.notifier_factory(telegram_id).send(RenderedMessage(copy.SIGNUP_EXPIRED))
+        if removed:
+            log.info("removed abandoned sign-ups", extra={"count": len(removed)})
+        return removed
+
     async def tick_all(self, wait_s: float = 50.0) -> None:
         """Start every user's tick side by side and wait a little for them. A user whose
         previous tick is still running (a hung Canvas) is skipped, never waited on, so
         nobody else's minute is lost and the heartbeat keeps coming."""
+        try:
+            await self.prune_signups()
+        except Exception:  # housekeeping must never cost anyone their minute
+            log.exception("pruning abandoned sign-ups failed")
         tenants = list(self.tenants.values())
         busy = [t.running for t in tenants if t.running is not None]
         started = [task for task in (t.start_tick() for t in tenants) if task is not None]
@@ -210,6 +285,8 @@ class Hub:
     async def verify(self, base_url: str, token: str) -> Verification:
         """Check a token against its Canvas: who it belongs to (only the time zone is kept)
         and that it can read the To Do list."""
+        if not await self.host_guard(urlsplit(base_url).hostname or ""):
+            return Verification("unreachable")
         client = self.client_factory(base_url, lambda: token)
         try:
             async with asyncio.timeout(VERIFY_TIMEOUT_S):

@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import math
 from dataclasses import dataclass
-from datetime import time
+from datetime import time, timedelta
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
@@ -183,6 +184,7 @@ class Signup:
                     self.registry.update_user(telegram_id, step=None, pending_base_url=None)
                 return [self.welcome(user)]
             self.registry.update_user(telegram_id, step="url")
+            self.registry.touch(telegram_id, self.hub.clock())
             return [Reply(copy.ASK_URL)]
         now = self.hub.clock()
         owner = self.hub.owner_id()
@@ -198,6 +200,7 @@ class Signup:
             self.registry.create_user(telegram_id, name, now=now, is_owner=True)
             return [Reply(copy.SIGNUP_INTRO), Reply(copy.ASK_URL)]
         if arg:
+            await self.hub.prune_signups()  # stalled sign-ups don't hold a slot
             if self.registry.count_users() >= self.hub.max_users:
                 return [Reply(copy.BOT_FULL)]
             if self.registry.redeem_invite(arg, telegram_id, now):
@@ -223,7 +226,16 @@ class Signup:
 
     # --- answers to the current step ------------------------------------------
 
+    def _seen(self, user: User) -> None:
+        if user.status == "onboarding":
+            self.registry.touch(user.telegram_id, self.hub.clock())
+
+    def token_wait(self, user: User) -> timedelta | None:
+        """How long until this user may have another token checked (None: right away)."""
+        return self.hub.token_limiter.wait(user.telegram_id, self.hub.clock())
+
     async def text(self, user: User, text: str) -> list[Reply]:
+        self._seen(user)
         step = user.step
         if step is None:
             return [Reply(copy.HELP)]
@@ -241,6 +253,7 @@ class Signup:
 
     async def choice(self, user: User, kind: str, value: str) -> list[Reply]:
         """A tapped option button (``su:<kind>:<value>``) counts as typing that value."""
+        self._seen(user)
         if kind not in _KIND_STEPS or user.step not in _KIND_STEPS[kind]:
             return self.prompt(user)
         if kind == "tz":
@@ -253,7 +266,7 @@ class Signup:
         base = normalize_canvas_url(text)
         if base is None:
             return [Reply(copy.URL_INVALID)]
-        if not await self.hub.host_check(urlsplit(base).hostname or ""):
+        if not await self.hub.host_guard(urlsplit(base).hostname or ""):
             return [Reply(copy.URL_UNREACHABLE)]
         if user.step == "edit_url":  # switch only once a token for the new site works
             self.registry.update_user(user.telegram_id, pending_base_url=base, step="edit_token")
@@ -274,6 +287,10 @@ class Signup:
             return [Reply(copy.TOKEN_FORMAT)]
         editing = user.step == "edit_token"
         base = (user.pending_base_url if editing else None) or user.canvas_base_url
+        wait = self.hub.token_limiter.hit(user.telegram_id, self.hub.clock())
+        if wait is not None:
+            minutes = max(1, math.ceil(wait.total_seconds() / 60))
+            return [Reply(copy.TOKEN_TOO_MANY.format(minutes=minutes))]
         result = await self.hub.verify(base, token)
         if result.problem is not None:
             host = urlsplit(base).hostname or base

@@ -9,7 +9,7 @@ from canvas_tracker.render import copy
 from canvas_tracker.render.digest import render_digest
 from canvas_tracker.render.format import TELEGRAM_LIMIT, clock, format_due, format_left
 from canvas_tracker.render.items import default_stale, heading, link_for, stale_note, title_html
-from canvas_tracker.render.message import Button, RenderedMessage
+from canvas_tracker.render.message import Button, RenderedMessage, item_callback
 
 MAX_ITEMS_PER_MESSAGE = 30  # 3 buttons each stays under Telegram's 100-button keyboard limit
 _HEADERS = {
@@ -35,12 +35,12 @@ def _item_block(n: int, item: Item, snap: Snapshot, now: datetime, settings: Set
     return f"{n}. {heading(item, snap, settings.canvas_host)}\n   {line}"
 
 
-def _item_row(n: int, item: Item, settings: Settings) -> tuple[Button, ...]:
+def _item_row(n: int, item: Item, salt: str, settings: Settings) -> tuple[Button, ...]:
     if item.db_id is None:
         return ()
     row = [
-        Button(f"{copy.BTN_DONE} {n}", callback_data=f"d:{item.db_id}"),
-        Button(f"{copy.BTN_SNOOZE} {n}", callback_data=f"s:{item.db_id}"),
+        Button(f"{copy.BTN_DONE} {n}", callback_data=item_callback("d", item.db_id, salt)),
+        Button(f"{copy.BTN_SNOOZE} {n}", callback_data=item_callback("s", item.db_id, salt)),
     ]
     url = link_for(item, settings.canvas_host)
     if url is not None:
@@ -64,13 +64,13 @@ def _list_messages(
             text, rows, count = block, [], 0
         else:
             text = f"{text}\n{block}"
-        rows.append(_item_row(n, item, settings))
+        rows.append(_item_row(n, item, snap.button_salt, settings))
         count += 1
     messages.append(RenderedMessage(text, tuple(r for r in rows if r)))
     return messages
 
 
-def _overdue(item: Item, now: datetime, settings: Settings) -> RenderedMessage:
+def _overdue(item: Item, salt: str, now: datetime, settings: Settings) -> RenderedMessage:
     assert item.due_at is not None  # noqa: S101
     tz = settings.zone
     text = copy.OVERDUE_NOTICE.format(
@@ -81,8 +81,8 @@ def _overdue(item: Item, now: datetime, settings: Settings) -> RenderedMessage:
     row: list[Button] = []
     if item.db_id is not None:
         row += [
-            Button(copy.BTN_DONE, callback_data=f"d:{item.db_id}"),
-            Button(copy.BTN_STOP, callback_data=f"x:{item.db_id}"),
+            Button(copy.BTN_DONE, callback_data=item_callback("d", item.db_id, salt)),
+            Button(copy.BTN_STOP, callback_data=item_callback("x", item.db_id, salt)),
         ]
     url = link_for(item, settings.canvas_host)
     if url is not None:
@@ -120,7 +120,7 @@ def render_send(
         return [RenderedMessage(_news(send, items[0], snap, now, settings), keyboard)]
     note = f"\n{stale_note(snap, now, settings)}" if stale else ""
     if send.kind is SendKind.OVERDUE:
-        message = _overdue(items[0], now, settings)
+        message = _overdue(items[0], snap.button_salt, now, settings)
         return [RenderedMessage(message.text + note, message.keyboard)]
     if send.kind is SendKind.REMINDER:
         template = copy.REMINDER_HEADERS[_slot_number(send.key) % len(copy.REMINDER_HEADERS)]
