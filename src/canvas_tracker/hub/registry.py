@@ -193,6 +193,16 @@ class Registry:
     def delete_user(self, telegram_id: int) -> None:
         self.conn.execute("DELETE FROM users WHERE telegram_id = ?", (telegram_id,))
 
+    def delete_stale_signup(self, telegram_id: int, before: datetime) -> bool:
+        """Delete this sign-up only if it is still stalled (see ``stale_signups``), in one
+        statement, so someone who came back a moment ago is kept. True if it was deleted."""
+        cursor = self.conn.execute(
+            "DELETE FROM users WHERE telegram_id = ? AND status = 'onboarding' "
+            "AND is_owner = 0 AND COALESCE(last_seen_at, created_at) < ?",
+            (telegram_id, to_db(before)),
+        )
+        return cursor.rowcount > 0
+
     # --- invites -------------------------------------------------------------
 
     def create_invite(self, now: datetime) -> str:

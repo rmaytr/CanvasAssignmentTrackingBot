@@ -75,6 +75,7 @@ class Watched:
     last_error: str | None = None
     auth_failed: bool = False
     tick_started_at: datetime | None = None  # set only while a tick is running
+    failing_since: datetime | None = None  # the first failed sync since the last good one
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,11 +105,13 @@ def is_sync_problem(user: Watched) -> bool:
 
 
 def failing_since(user: Watched, first_seen: datetime | None) -> datetime | None:
-    """Since when a non-auth sync error has lasted: from the last good sync, or, for a
-    user who never synced, from when the monitor first saw it. None if not failing."""
+    """Since when a non-auth sync error has lasted: from the first failed sync since the
+    last good one (not from the last good sync: time the server was down, or the user
+    wasn't syncing at all, isn't failing time), or, when that wasn't recorded (data from
+    an older version), from when the monitor first saw it. None if not failing."""
     if user.auth_failed or user.last_error is None:
         return None
-    return user.last_ok if user.last_ok is not None else first_seen
+    return user.failing_since if user.failing_since is not None else first_seen
 
 
 def disk_low(usage: DiskUsage) -> bool:

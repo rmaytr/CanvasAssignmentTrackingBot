@@ -307,9 +307,7 @@ def register_handlers(app: Application[Any, Any, Any, Any, Any, Any], signup: Si
     app.add_handler(CommandHandler("email", serial(email_cmd(signup))))
     app.add_handler(CommandHandler("feedback", serial(feedback_cmd(signup))))
     app.add_handler(CommandHandler("cancel", serial(_simple(signup, signup.cancel))))
-    app.add_handler(
-        CommandHandler("disconnect", serial(_simple(signup, lambda _u: signup.disconnect_prompt())))
-    )
+    app.add_handler(CommandHandler("disconnect", serial(_simple(signup, signup.disconnect_prompt))))
     app.add_handler(CommandHandler("invite", serial(invite_cmd(signup))))
     app.add_handler(CommandHandler("users", serial(_simple(signup, signup.users))))
     app.add_handler(CommandHandler("health", serial(_simple(signup, signup.health))))

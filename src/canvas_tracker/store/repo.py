@@ -9,7 +9,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from canvas_tracker.domain.done_rule import is_done
+from canvas_tracker.domain.done_rule import DoneSource, done_source, is_done
 from canvas_tracker.domain.models import (
     REMINDER_KINDS,
     AssignmentGroup,
@@ -30,6 +30,7 @@ LAST_SYNC_ATTEMPT_AT = "last_sync_attempt_at"
 LAST_SYNC_ERROR = "last_sync_error"
 PLANNER_ETAG = "planner_etag"
 AUTH_FAILED_SINCE = "auth_failed_since"
+SYNC_FAILING_SINCE = "sync_failing_since"  # the first failed sync since the last good one
 LAST_TICK_AT = "last_tick_at"
 LAST_ENRICHMENT_AT = "last_enrichment_at"
 LAST_PURGE_AT = "last_purge_at"
@@ -40,6 +41,14 @@ FEED_LAST_MODIFIED = "feed_last_modified"
 SOURCE_MODE = "source_mode"  # how this user's Canvas is read: "token" (default) or "feed"
 
 CLAIM_STALE_AFTER = timedelta(minutes=2)
+# The plannable types calendar-feed items use (sources/feed.py). After a switch between
+# token and feed, an item from the new source takes over its twin from the old one.
+FEED_ASSIGNMENT = "feed_assignment"
+FEED_EVENT = "feed_event"
+SAME_DEADLINE = timedelta(minutes=2)  # the feed rounds a planner deadline's seconds off
+_CANVAS_DONE = frozenset(
+    {DoneSource.CANVAS_MARKED, DoneSource.SUBMITTED, DoneSource.EXCUSED, DoneSource.GRADED_OFFLINE}
+)
 _TS_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 # Columns a planner sync owns. Enrichment owns lock_at, submission_types,
@@ -226,9 +235,98 @@ class Store:
                     (incoming.plannable_type, incoming.plannable_id),
                 ).fetchone()
                 if row is None:
+                    twin = self._twin(incoming, set(latest))
+                    if twin is not None:
+                        row = self._adopt(twin, incoming, now)
+                if row is None:
                     self._insert(replace(incoming, done_seen_at=now if is_done(incoming) else None))
                 else:
                     self._update(_item_from_row(row), incoming, now)
+
+    def _twin(self, incoming: Item, batch: set[str]) -> sqlite3.Row | None:
+        """The same Canvas item as read by the other source (token vs calendar feed), if
+        this database still has it: feed assignments carry the assignment's id, feed
+        events the calendar event's. None when there is no such row."""
+        kind = incoming.plannable_type
+        if kind == FEED_ASSIGNMENT:
+            rows = self.conn.execute(
+                "SELECT * FROM items WHERE assignment_id = ? AND plannable_type NOT LIKE 'feed%' "
+                "ORDER BY gone_at IS NOT NULL, id",
+                (incoming.plannable_id,),
+            ).fetchall()
+        elif kind == FEED_EVENT:
+            rows = self.conn.execute(
+                "SELECT * FROM items WHERE plannable_type = 'calendar_event' AND plannable_id = ?",
+                (incoming.plannable_id,),
+            ).fetchall()
+        elif kind == "calendar_event":
+            rows = self.conn.execute(
+                "SELECT * FROM items WHERE plannable_type = ? AND plannable_id = ?",
+                (FEED_EVENT, incoming.plannable_id),
+            ).fetchall()
+        elif incoming.assignment_id is not None and not kind.startswith("feed"):
+            rows = self.conn.execute(
+                "SELECT * FROM items WHERE plannable_type = ? AND plannable_id = ?",
+                (FEED_ASSIGNMENT, incoming.assignment_id),
+            ).fetchall()
+        else:
+            return None
+        for row in rows:
+            if f"{row['plannable_type']}-{row['plannable_id']}" not in batch:
+                found: sqlite3.Row = row
+                return found
+        return None
+
+    def _adopt(self, row: sqlite3.Row, incoming: Item, now: datetime) -> sqlite3.Row:
+        """Give the twin row the new source's identity, keeping its ✅ Done mark, snooze,
+        stop flag, buttons (its id) and reminder history, so a switch between token and
+        feed neither forgets what the user did nor re-announces work they already know
+        about. Work Canvas knew was submitted stays done in feed mode, which can't see
+        submissions, as if the user had tapped ✅ Done."""
+        twin = _item_from_row(row)
+        changes: dict[str, Any] = {
+            "plannable_type": incoming.plannable_type,
+            "plannable_id": incoming.plannable_id,
+        }
+        due, new_due = twin.due_at, incoming.due_at
+        if due is not None and new_due is not None and abs(due - new_due) <= SAME_DEADLINE:
+            changes["due_at"] = new_due  # the same deadline: _update mustn't reopen it
+            if twin.bot_done_at is not None and twin.bot_done_due_at == due:
+                changes["bot_done_due_at"] = new_due
+            if incoming.plannable_type.startswith("feed") and done_source(twin) in _CANVAS_DONE:
+                changes["bot_done_at"] = twin.bot_done_at or now
+                changes["bot_done_due_at"] = new_due
+        adopted = replace(twin, **changes)
+        assignments = ", ".join(f"{c} = ?" for c in changes)
+        self.conn.execute(
+            f"UPDATE items SET {assignments} WHERE id = ?",  # noqa: S608 - fixed columns
+            [*(_db_value(adopted, c) for c in changes), twin.db_id],
+        )
+        self._rename_ref(twin.ref, incoming.ref)
+        found: sqlite3.Row | None = self.conn.execute(
+            "SELECT * FROM items WHERE id = ?", (twin.db_id,)
+        ).fetchone()
+        assert found is not None  # noqa: S101 - updated just above, in the same transaction
+        return found
+
+    def _rename_ref(self, old: str, new: str) -> None:
+        """Point sent messages about ``old`` at ``new``: their item list (the reminder
+        history) and send keys (so one-off alerts such as "overdue" aren't sent again)."""
+        rows = self.conn.execute("SELECT key, item_refs FROM notifications").fetchall()
+        for r in rows:
+            refs = json.loads(r["item_refs"])
+            parts = r["key"].split(":")
+            if old not in refs and old not in parts:
+                continue
+            renamed = json.dumps([new if ref == old else ref for ref in refs])
+            self.conn.execute(
+                "UPDATE notifications SET item_refs = ? WHERE key = ?", (renamed, r["key"])
+            )
+            key = ":".join(new if part == old else part for part in parts)
+            if key != r["key"]:
+                self.conn.execute(
+                    "UPDATE OR IGNORE notifications SET key = ? WHERE key = ?", (key, r["key"])
+                )
 
     def _insert(self, item: Item) -> None:
         columns = ", ".join(_INSERT_COLUMNS)

@@ -22,8 +22,7 @@ from canvas_tracker.sources.canvas_client import (
     CanvasUnavailable,
 )
 from canvas_tracker.sources.enrichment import fetch_enrichment
-from canvas_tracker.sources.feed import FeedClient, map_feed_event
-from canvas_tracker.sources.ical import parse_calendar
+from canvas_tracker.sources.feed import FeedClient, feed_items
 from canvas_tracker.sources.planner import fetch_planner, planner_window
 from canvas_tracker.store.repo import (
     AUTH_FAILED_SINCE,
@@ -34,6 +33,7 @@ from canvas_tracker.store.repo import (
     LAST_SYNC_ATTEMPT_AT,
     LAST_SYNC_ERROR,
     PLANNER_ETAG,
+    SYNC_FAILING_SINCE,
     Store,
 )
 
@@ -97,8 +97,15 @@ class SyncBase:
     async def enrich(self, now: datetime) -> SyncOutcome:
         raise NotImplementedError
 
-    def _failed(self, now: datetime, exc: CanvasError) -> SyncOutcome:
+    def _record_error(self, now: datetime, exc: BaseException) -> None:
+        """Note the error, and when this run of failures started (kept until a sync
+        works), so the owner's alert counts failing time, not time without syncs."""
         self.store.set_state(LAST_SYNC_ERROR, type(exc).__name__)
+        if self.store.get_time(SYNC_FAILING_SINCE) is None:
+            self.store.set_time(SYNC_FAILING_SINCE, now)
+
+    def _failed(self, now: datetime, exc: CanvasError) -> SyncOutcome:
+        self._record_error(now, exc)
         if isinstance(exc, CanvasAuthError):
             if self.store.get_time(AUTH_FAILED_SINCE) is None:
                 self.store.set_time(AUTH_FAILED_SINCE, now)
@@ -113,6 +120,7 @@ class SyncBase:
     def _succeeded(self, now: datetime) -> None:
         self.store.set_time(LAST_SUCCESSFUL_SYNC_AT, now)
         self.store.set_time(AUTH_FAILED_SINCE, None)
+        self.store.set_time(SYNC_FAILING_SINCE, None)
         self.store.set_state(LAST_SYNC_ERROR, None)
 
     async def _host_ok(self) -> bool:
@@ -155,7 +163,7 @@ class SyncService(SyncBase):
         except CanvasError as exc:
             return self._failed(now, exc)
         except Exception as exc:  # anything else must not take the tick down with it
-            self.store.set_state(LAST_SYNC_ERROR, type(exc).__name__)
+            self._record_error(now, exc)
             log.exception("planner sync failed")
             return SyncOutcome.PROTOCOL_ERROR
         if fetch.items is None:
@@ -227,8 +235,12 @@ class FeedSync(SyncBase):
             if response.not_modified:
                 self._succeeded(now)
                 return SyncOutcome.NOT_MODIFIED
-            try:
-                calendar = parse_calendar(response.body, self.zone)
+            window = planner_window(now)
+            try:  # parsing a big feed is CPU work: off the loop, so other users don't wait
+                async with asyncio.timeout(self.sync_timeout_s):
+                    items = await asyncio.to_thread(
+                        feed_items, response.body, self.base_url, self.zone, window
+                    )
             except ValueError:
                 raise CanvasProtocolError("the calendar feed isn't iCalendar") from None
         except TimeoutError:
@@ -236,15 +248,9 @@ class FeedSync(SyncBase):
         except CanvasError as exc:
             return self._failed(now, exc)
         except Exception as exc:  # anything else must not take the tick down with it
-            self.store.set_state(LAST_SYNC_ERROR, type(exc).__name__)
+            self._record_error(now, exc)
             log.exception("feed sync failed")
             return SyncOutcome.PROTOCOL_ERROR
-        window = planner_window(now)
-        items = [
-            item
-            for item in (map_feed_event(e, self.base_url, self.zone) for e in calendar.events)
-            if item.due_at is not None and window[0] <= item.due_at <= window[1]
-        ]
         self.store.upsert_items(items, now)
         self.store.mark_gone(window, {item.ref for item in items}, now)
         self.store.set_state(FEED_ETAG, response.etag)

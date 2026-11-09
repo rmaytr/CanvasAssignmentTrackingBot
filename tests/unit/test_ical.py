@@ -211,3 +211,64 @@ def test_chicago_fallback_for_floating_times_in_a_feed_without_zone() -> None:
     assert parse_calendar(data, CHICAGO).events[0].start == datetime(
         2026, 10, 20, 14, 0, tzinfo=UTC
     )
+
+
+# --- hostile feeds (review findings) ------------------------------------------------
+
+
+def test_deep_nesting_parses_in_linear_time() -> None:
+    """A feed host could nest components 100k deep; END used to scan the whole stack."""
+    import time as clock
+
+    n = 100_000
+    data = b"BEGIN:VCALENDAR\r\n" + b"BEGIN:A\r\n" * n + b"END:B\r\n" * n + b"END:VCALENDAR"
+    started = clock.perf_counter()
+    assert parse_calendar(data, NY).events == ()
+    assert clock.perf_counter() - started < 2.0
+
+
+def test_events_after_ignored_deep_nesting_still_count() -> None:
+    deep = ["BEGIN:X"] * 50 + ["UID:inside", "DTSTART:20261020T090000Z"] + ["END:X"] * 50
+    data = cal(*deep, "BEGIN:VEVENT", "UID:real", "DTSTART:20261020T090000Z", "END:VEVENT")
+    assert [e.uid for e in parse_calendar(data, NY).events] == ["real"]
+
+
+def test_an_over_long_tzid_or_calendar_zone_is_ignored_not_raised() -> None:
+    long_zone = "A" * 300
+    data = cal(
+        f"X-WR-TIMEZONE:{long_zone}",
+        "BEGIN:VEVENT", "UID:a", f"DTSTART;TZID={long_zone}:20261110T120000", "END:VEVENT",
+        "BEGIN:VEVENT", "UID:b", "DTSTART:20261110T120000Z", "END:VEVENT",
+    )  # fmt: skip
+    calendar = parse_calendar(data, NY)
+    assert calendar.time_zone is None
+    assert [e.uid for e in calendar.events] == ["a", "b"]
+    assert calendar.events[0].start == datetime(2026, 11, 10, 17, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("value", "zone"),
+    [
+        ("DTSTART;VALUE=DATE:00010101", ZoneInfo("Asia/Tokyo")),
+        ("DTSTART;VALUE=DATE:99991231", ZoneInfo("America/Los_Angeles")),
+        ("DTSTART:00010101T000000", ZoneInfo("Asia/Tokyo")),
+        ("DTSTART:99991231T235959", ZoneInfo("America/Los_Angeles")),
+    ],
+)
+def test_dates_at_the_edge_of_the_range_are_skipped_not_raised(value: str, zone: ZoneInfo) -> None:
+    data = cal(
+        "BEGIN:VEVENT", "UID:odd", value, "END:VEVENT",
+        "BEGIN:VEVENT", "UID:ok", "DTSTART:20261110T120000Z", "END:VEVENT",
+    )  # fmt: skip
+    assert [e.uid for e in parse_calendar(data, zone).events] == ["ok"]
+
+
+def test_long_text_values_are_cut() -> None:
+    data = cal(
+        "BEGIN:VEVENT", "UID:" + "u" * 50_000, "SUMMARY:" + "s" * 50_000,
+        "DESCRIPTION:" + "d" * 50_000, "URL:https://x.example/" + "p" * 50_000,
+        "DTSTART:20261110T120000Z", "END:VEVENT",
+    )  # fmt: skip
+    [event] = parse_calendar(data, NY).events
+    assert len(event.uid) <= 2_000 and len(event.summary) <= 2_000
+    assert len(event.description) <= 2_000 and len(event.url or "") <= 2_000

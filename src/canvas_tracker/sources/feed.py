@@ -5,8 +5,8 @@ encrypted like a token, kept out of the logs, and only ever fetched from the hos
 names. The feed has no submission status, so feed items are only ever done when the
 user taps ✅ Done; and it has no grade weights, so ranking works without them.
 
-Downloads are HTTPS only, capped at 5 MB (counted after decompression), time out,
-and may only redirect within the same host.
+Downloads are HTTPS only, capped at 5 MB (counted while unpacking, so a compression
+bomb is stopped at the cap), time out, and may only redirect within the same host.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import random
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import time
+from datetime import datetime, time
 from urllib.parse import parse_qs, urljoin, urlsplit
 from zoneinfo import ZoneInfo
 
@@ -26,12 +26,14 @@ import httpx
 from canvas_tracker.domain.models import Item, ItemType
 from canvas_tracker.planning.timeutil import at_local
 from canvas_tracker.sources.canvas_client import (
+    ACCEPT_ENCODING,
     USER_AGENT,
     CanvasAuthError,
     CanvasProtocolError,
     CanvasUnavailable,
+    read_capped,
 )
-from canvas_tracker.sources.ical import CalendarEvent
+from canvas_tracker.sources.ical import CalendarEvent, parse_calendar
 
 FEED_PATH_RE = re.compile(r"^/feeds/calendars/[A-Za-z0-9_.~-]{1,200}\.ics$")
 FEED_MAX_BYTES = 5 * 1024 * 1024
@@ -46,7 +48,6 @@ _UID_RE = re.compile(r"^event-([a-z][a-z_-]{0,40}?)-(\d{1,18})$")
 _ASSIGNMENT_PATH_RE = re.compile(r"/courses/(\d{1,18})/assignments/(\d{1,18})")
 _COURSE_PATH_RE = re.compile(r"/courses/(\d{1,18})")
 _COURSE_CONTEXT_RE = re.compile(r"(?:^|,)course_(\d{1,18})(?:,|$)")
-_SUMMARY_RE = re.compile(r"^(.*?)\s*\[([^\[\]]+)\]\s*$", re.DOTALL)
 
 
 class FeedRejected(CanvasAuthError):
@@ -127,7 +128,11 @@ class FeedClient:
             raise CanvasProtocolError("that isn't a Canvas calendar feed link")
         if self._host is not None and (parts.hostname or "").lower() != self._host:
             raise CanvasProtocolError("the calendar feed is on another host")
-        headers = {"User-Agent": USER_AGENT, "Accept": "text/calendar, */*;q=0.5"}
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "text/calendar, */*;q=0.5",
+            "Accept-Encoding": ACCEPT_ENCODING,
+        }
         if etag:
             headers["If-None-Match"] = etag
         if last_modified:
@@ -149,17 +154,7 @@ class FeedClient:
     # --- internals -------------------------------------------------------------
 
     async def _read(self, response: httpx.Response, limit: int) -> bytes:
-        length = response.headers.get("Content-Length", "")
-        if length.isdigit() and int(length) > limit:
-            raise FeedTooLarge("the calendar feed is too large")
-        chunks: list[bytes] = []
-        total = 0
-        async for chunk in response.aiter_bytes():  # decoded bytes: a gzip bomb counts in full
-            total += len(chunk)
-            if total > limit:
-                raise FeedTooLarge("the calendar feed is too large")
-            chunks.append(chunk)
-        return b"".join(chunks)
+        return await read_capped(response, limit, FeedTooLarge)
 
     async def _get(
         self,
@@ -208,12 +203,14 @@ class FeedClient:
                     )
             except httpx.TransportError:
                 raise _Retry("network error talking to Canvas") from None
+            except (httpx.HTTPError, httpx.InvalidURL, httpx.StreamError):
+                raise CanvasProtocolError("unexpected response from Canvas") from None
         raise CanvasProtocolError("too many redirects")
 
     async def _throttled(self, response: httpx.Response) -> bool:
         try:
             body = await self._read(response, 64 * 1024)
-        except FeedTooLarge:
+        except CanvasProtocolError:
             return False
         return b"Rate Limit Exceeded" in body
 
@@ -280,11 +277,34 @@ def feed_identity(event: CalendarEvent) -> tuple[str, int, bool]:
 
 
 def split_summary(summary: str) -> tuple[str, str]:
-    """``"Essay [CS 101]"`` → ``("Essay", "CS 101")``; no brackets → (summary, "")."""
-    match = _SUMMARY_RE.match(summary)
-    if match is None or not match.group(1).strip():
+    """``"Essay [CS 101]"`` → ``("Essay", "CS 101")``; no brackets → (summary, "").
+
+    Linear in the length (no regex: a backtracking one was quadratic on long runs of
+    spaces, and the summary comes from a host the user chose)."""
+    text = summary.rstrip()
+    opening = text.rfind("[", 0, len(text) - 1) if text.endswith("]") else -1
+    course = text[opening + 1 : -1] if opening >= 0 else ""
+    title = text[:opening].strip() if opening >= 0 else ""
+    if not course or "]" in course or not title:
         return summary.strip(), ""
-    return match.group(1).strip(), match.group(2).strip()
+    return title, course.strip()
+
+
+def feed_items(
+    body: bytes, base_url: str, zone: ZoneInfo, window: tuple[datetime, datetime]
+) -> list[Item]:
+    """The feed's entries due inside ``window``, as Items. Raises ValueError when the
+    body isn't an iCalendar; an entry that can't be mapped is skipped, never raised.
+    Pure and CPU-bound, so callers run it off the event loop."""
+    items: list[Item] = []
+    for event in parse_calendar(body, zone).events:
+        try:
+            item = map_feed_event(event, base_url, zone)
+        except (ValueError, OverflowError):
+            continue
+        if item.due_at is not None and window[0] <= item.due_at <= window[1]:
+            items.append(item)
+    return items
 
 
 def map_feed_event(event: CalendarEvent, base_url: str, zone: ZoneInfo) -> Item:

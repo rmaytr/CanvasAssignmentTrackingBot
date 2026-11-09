@@ -160,6 +160,10 @@ def test_feed_identity_hashes_unknown_uids_stably_and_never_like_the_planner() -
         ("No course", ("No course", "")),
         ("[ENG 101]", ("[ENG 101]", "")),
         ("  Spaced   [X] ", ("Spaced", "X")),
+        ("Odd [a]b]", ("Odd [a]b]", "")),
+        ("Empty []", ("Empty []", "")),
+        ("Blank [ ]", ("Blank", "")),
+        ("Two\nlines [ENG\n101]", ("Two\nlines", "ENG\n101")),
     ],
 )
 def test_split_summary(summary: str, parts: tuple[str, str]) -> None:
@@ -490,3 +494,65 @@ async def test_feed_sync_errors_never_log_the_link(caplog: pytest.LogCaptureFixt
     assert any(FEED_PATH in t for t in texts)  # the raw traceback has it...
     redacting = RedactingFilter([])
     assert all(FEED_PATH not in redacting.redact(t) for t in texts)  # ...the log filter doesn't
+
+
+# --- hostile feeds (review findings) ---------------------------------------------
+
+
+def test_split_summary_is_linear_on_long_runs_of_spaces() -> None:
+    import time as clock
+
+    summary = "x" + " " * 400_000 + "x"
+    started = clock.perf_counter()
+    assert split_summary(summary) == (summary, "")
+    assert split_summary(summary + "]") == (summary + "]", "")
+    assert clock.perf_counter() - started < 0.5
+
+
+def _raw(body: bytes, headers: dict[str, str]) -> httpx.Response:
+    """A response the client gets byte for byte as sent (``content=`` would be unpacked
+    by httpx before the client sees it)."""
+    return httpx.Response(200, headers=headers, stream=httpx.ByteStream(body))
+
+
+async def test_a_double_gzip_bomb_is_refused_before_it_is_unpacked() -> None:
+    inner = gzip.compress(b"\0" * 50_000_000)
+    server = Server(lambda _r: _raw(gzip.compress(inner), {"Content-Encoding": "gzip, gzip"}))
+    with pytest.raises(CanvasProtocolError, match="encoding"):
+        await client(server).fetch()
+    assert server.requests[0].headers["Accept-Encoding"] == "gzip"
+
+
+async def test_a_gzip_bomb_stops_at_the_cap_and_a_real_gzip_feed_works() -> None:
+    bomb = gzip.compress(b"A" * 50_000_000)
+    server = Server(lambda _r: _raw(bomb, {"Content-Encoding": "gzip"}))
+    with pytest.raises(FeedTooLarge):
+        await client(server, max_bytes=100_000).fetch()
+    server = Server(lambda _r: _raw(gzip.compress(ics()), {"Content-Encoding": "gzip"}))
+    assert (await client(server).fetch()).body == ics()
+
+
+async def test_corrupt_compression_is_a_protocol_error_not_a_crash() -> None:
+    server = Server(lambda _r: _raw(b"definitely not gzip", {"Content-Encoding": "gzip"}))
+    with pytest.raises(CanvasProtocolError):
+        await client(server).fetch()
+
+
+async def test_other_httpx_errors_are_protocol_errors() -> None:
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.DecodingError("bad body", request=request)
+
+    with pytest.raises(CanvasProtocolError):
+        await client(Server(boom)).fetch()
+
+
+async def test_one_entry_that_cant_be_mapped_doesnt_stop_the_sync() -> None:
+    store = new_store()
+    body = ics(
+        feed_assignment(1, "20261110T120000Z"),
+        "UID:event-assignment-2\r\nDTSTART;VALUE=DATE:90001231\r\nSUMMARY:Far",
+        "UID:x\r\nDTSTART;TZID=" + "Z" * 300 + ":20261110T120000\r\nSUMMARY:Odd zone",
+        zone="Pacific/Kiritimati",
+    )
+    server = Server(lambda _r: httpx.Response(200, content=body))
+    assert await feed_sync(store, server).sync(NOW) is SyncOutcome.OK

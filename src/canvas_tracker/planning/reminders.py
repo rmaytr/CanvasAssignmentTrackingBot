@@ -152,21 +152,35 @@ def _next_digest_at(now: datetime, settings: Settings) -> datetime:
     return at if at > now else at_local(today + timedelta(days=1), settings.digest_time, zone)
 
 
+def _last_digest_at(now: datetime, settings: Settings) -> datetime:
+    """When the latest morning list was due, at or before ``now``."""
+    zone = settings.zone
+    today = local_date(now, zone)
+    at = at_local(today, settings.digest_time, zone)
+    return at if at <= now else at_local(today - timedelta(days=1), settings.digest_time, zone)
+
+
 def _new_urgent_rule(
     now: datetime, snap: Snapshot, settings: Settings
-) -> tuple[datetime, timedelta]:
-    """(horizon, recent): alert an item due by ``horizon`` that wasn't mentioned within
-    ``recent`` before its deadline.
+) -> tuple[datetime, timedelta, datetime | None]:
+    """(horizon, recent, since): alert an item due by ``horizon`` that wasn't mentioned
+    within ``recent`` before its deadline, nor (when ``since`` is set) since then.
 
     With reminders on, the horizon is the next reminder slot. With them off, it is the
-    next morning list, and "mentioned" means since it became urgent: work posted after
-    this morning's list and due before the next one gets one heads-up.
+    next morning list, and "mentioned" means since it became urgent or in the latest
+    morning list: work posted after this morning's list and due before the next one gets
+    one heads-up, while work the list already showed doesn't (with a reminder window
+    shorter than a day, work can be on the list before it is urgent).
     """
     interval = settings.reminder_interval
     if interval is None:
-        return _next_digest_at(now, settings), settings.reminder_window
+        return (
+            _next_digest_at(now, settings),
+            settings.reminder_window,
+            _last_digest_at(now, settings),
+        )
     horizon = next_reminder_at(now, snap, settings) or floor_minute(now) + interval
-    return horizon, interval
+    return horizon, interval, None
 
 
 def _overnight(now: datetime, snap: Snapshot, settings: Settings) -> list[Send]:
@@ -194,7 +208,7 @@ def plan_alerts(now: datetime, snap: Snapshot, settings: Settings) -> tuple[Send
     if _quiet(now, settings):
         return tuple(overnight)
 
-    next_slot, recent = _new_urgent_rule(now, snap, settings)
+    next_slot, recent, since = _new_urgent_rule(now, snap, settings)
     new_urgent: list[Send] = []
     snooze_end: list[Send] = []
     for item in _by_due([i for i in snap.items if is_active(i, now, settings, snap.pause_until)]):
@@ -210,7 +224,7 @@ def plan_alerts(now: datetime, snap: Snapshot, settings: Settings) -> tuple[Send
         key = new_urgent_key(item)
         if (
             item.due_at <= next_slot
-            and (last is None or last < item.due_at - recent)
+            and (last is None or (last < item.due_at - recent and (since is None or last < since)))
             and key not in snap.sent_keys
         ):
             new_urgent.append(Send(key, SendKind.NEW_URGENT, (item.ref,)))

@@ -1,6 +1,10 @@
 import asyncio
+import gzip
+import json
+import zlib
+from collections.abc import Callable
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -196,3 +200,118 @@ async def test_401_records_whether_canvas_challenged_the_token() -> None:  # rev
     with pytest.raises(CanvasAuthError) as plain:
         await make_client().get_json("/api/v1/b")
     assert challenged.value.challenged is True and plain.value.challenged is False
+
+
+# --- bounded responses (review findings) --------------------------------------------
+
+
+def _bomb(size: int, layers: int) -> bytes:
+    body = b"0" * size
+    for _ in range(layers):
+        body = gzip.compress(body)
+    return body
+
+
+def _raw(status: int, body: bytes, headers: dict[str, str]) -> httpx.Response:
+    """A response whose body is sent as is, so the client sees the encoded bytes."""
+    return httpx.Response(status, headers=headers, stream=httpx.ByteStream(body))
+
+
+def _served(
+    respond: Callable[[httpx.Request], httpx.Response],
+    page_bytes: int = 100_000,
+    total_bytes: int = 250_000,
+) -> CanvasClient:
+    """A client whose server is ``respond`` (a plain MockTransport, which, unlike respx,
+    hands the client the body exactly as it was sent)."""
+    return CanvasClient(
+        BASE,
+        lambda: "tok",
+        transport=httpx.MockTransport(respond),
+        sleep=AsyncMock(),
+        rand=lambda: 0.5,
+        max_page_bytes=page_bytes,
+        max_total_bytes=total_bytes,
+    )
+
+
+async def test_a_gzip_body_is_unpacked_by_the_client() -> None:
+    seen: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return _raw(200, gzip.compress(json.dumps({"a": 1}).encode()), {"Content-Encoding": "gzip"})
+
+    assert await _served(respond).get_json("/api/v1/x") == {"a": 1}
+    assert seen[0].headers["Accept-Encoding"] == "gzip"
+
+
+async def test_an_oversized_page_is_refused_by_header_or_while_reading() -> None:
+    declared = _served(lambda _r: _raw(200, b"[]", {"Content-Length": "999999999"}))
+    with pytest.raises(CanvasProtocolError, match="too large"):
+        await declared.get_json("/api/v1/x")
+    streamed = _served(lambda _r: _raw(200, b"[" + b"1," * 60_000 + b"1]", {}))
+    with pytest.raises(CanvasProtocolError, match="too large"):
+        await streamed.get_json("/api/v1/x")
+
+
+async def test_a_gzip_bomb_is_refused_without_unpacking_it_all() -> None:
+    bomb = _bomb(50_000_000, 1)  # about 50 KB on the wire
+    unpacked: list[int] = []
+    real = zlib.decompressobj
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        inner = real(*args, **kwargs)
+
+        class Spy:
+            def decompress(self, data: bytes, max_length: int = 0) -> bytes:
+                out = inner.decompress(data, max_length)
+                unpacked.append(len(out))
+                return out
+
+            def __getattr__(self, name: str) -> Any:
+                return getattr(inner, name)
+
+        return Spy()
+
+    client = _served(lambda _r: _raw(200, bomb, {"Content-Encoding": "gzip"}))
+    with (
+        patch("canvas_tracker.sources.canvas_client.zlib.decompressobj", spy),
+        pytest.raises(CanvasProtocolError, match="too large"),
+    ):
+        await client.get_json("/api/v1/x")
+    assert sum(unpacked) <= 100_001  # never more than the cap was unpacked
+
+
+async def test_stacked_encodings_are_refused() -> None:
+    client = _served(lambda _r: _raw(200, _bomb(1_000_000, 2), {"Content-Encoding": "gzip, gzip"}))
+    with pytest.raises(CanvasProtocolError, match="encoding"):
+        await client.get_json("/api/v1/x")
+
+
+async def test_corrupt_compression_is_a_protocol_error() -> None:
+    client = _served(lambda _r: _raw(200, b"not gzip at all", {"Content-Encoding": "gzip"}))
+    with pytest.raises(CanvasProtocolError, match="compression"):
+        await client.get_json("/api/v1/x")
+
+
+async def test_pages_together_have_a_size_cap() -> None:
+    page = json.dumps(["x" * 50] * 1_500).encode()  # ~80 KB a page, under the page cap
+    link = {"Link": f'<{BASE}/api/v1/things?page=2>; rel="next"'}
+    client = _served(lambda _r: _raw(200, page, link))
+    with pytest.raises(CanvasProtocolError, match="more than"):
+        await client.get_all("/api/v1/things")
+
+
+@respx.mock
+async def test_deeply_nested_json_is_a_protocol_error() -> None:
+    respx.get(f"{BASE}/api/v1/x").respond(200, content=b"[" * 100_000)
+    with pytest.raises(CanvasProtocolError, match="JSON"):
+        await make_client().get_json("/api/v1/x")
+
+
+async def test_a_401_with_a_broken_body_is_still_an_auth_error() -> None:
+    headers = {"Content-Encoding": "gzip", "WWW-Authenticate": "x"}
+    client = _served(lambda _r: _raw(401, b"garbage", headers))
+    with pytest.raises(CanvasAuthError):
+        await client.get_json("/api/v1/x")

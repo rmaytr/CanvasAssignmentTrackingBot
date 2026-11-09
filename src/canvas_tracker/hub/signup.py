@@ -224,18 +224,24 @@ class Signup:
 
     def _token_prompt(self, user: User, edit: bool) -> Reply:
         new_site = edit and user.pending_base_url is not None
-        base = (user.pending_base_url if new_site else user.canvas_base_url) or ""
         if new_site:
             text = copy.ASK_TOKEN_NEW_SITE
         elif edit:
             text = copy.ASK_TOKEN_SWITCH if user.feed_mode else copy.ASK_TOKEN_EDIT
         else:
             text = copy.ASK_TOKEN
+        return Reply(text, self._token_rows(user, edit))
+
+    @staticmethod
+    def _token_rows(user: User, edit: bool) -> tuple[tuple[Button, ...], ...]:
+        """The token step's buttons: open Canvas's settings, or use the feed instead."""
+        new_site = edit and user.pending_base_url is not None
+        base = (user.pending_base_url if new_site else user.canvas_base_url) or ""
         rows: list[tuple[Button, ...]] = []
         if base:
             rows.append((Button(copy.BTN_OPEN_SETTINGS, url=f"{base}/profile/settings"),))
         rows.append((Button(copy.BTN_USE_FEED, "su:mode:feed"),))
-        return Reply(text, tuple(rows))
+        return tuple(rows)
 
     def _feed_prompt(self, user: User, edit: bool) -> Reply:
         new_site = edit and user.pending_base_url is not None
@@ -431,7 +437,9 @@ class Signup:
         if result.problem is not None:
             host = urlsplit(base).hostname or base
             fix = copy.FIX_ADDRESS_SETTINGS if editing else copy.FIX_ADDRESS_SIGNUP
-            return [Reply(copy.TOKEN_PROBLEMS[result.problem].format(host=host, fix=fix))]
+            text = copy.TOKEN_PROBLEMS[result.problem].format(host=host, fix=fix)
+            # the way out (a fresh token, or the feed when tokens are restricted) one tap away
+            return [Reply(text, self._token_rows(user, editing))]
         sealed = self.hub.box.seal(token)
         if editing:  # a feed link, if there was one, is forgotten once the token works
             self.registry.update_user(
@@ -631,20 +639,25 @@ class Signup:
             return self.prompt(user)
         return [Reply(copy.NOTHING_TO_CANCEL)]
 
-    def disconnect_prompt(self) -> list[Reply]:
+    def disconnect_prompt(self, user: User) -> list[Reply]:
         keyboard = (
             (
                 Button(copy.BTN_DISCONNECT_YES, "bye:yes"),
                 Button(copy.BTN_DISCONNECT_NO, "bye:no"),
             ),
         )
-        return [Reply(copy.DISCONNECT_CONFIRM, keyboard)]
+        return [
+            Reply(
+                copy.DISCONNECT_CONFIRM_FEED if user.feed_mode else copy.DISCONNECT_CONFIRM,
+                keyboard,
+            )
+        ]
 
     async def disconnect(self, user: User, confirmed: bool) -> list[Reply]:
         if not confirmed:
             return [Reply(copy.DISCONNECT_KEPT)]
         await self.hub.remove(user.telegram_id)
-        return [Reply(copy.DISCONNECTED)]
+        return [Reply(copy.DISCONNECTED_FEED if user.feed_mode else copy.DISCONNECTED)]
 
     # --- /feedback ----------------------------------------------------------
 
@@ -772,7 +785,8 @@ class Signup:
             return [Reply(copy.REMOVE_SELF)]
         with contextlib.suppress(NotifyError):
             notifier = self.hub.notifier_factory(target.telegram_id)
-            await notifier.send(RenderedMessage(copy.REMOVED_BY_OWNER))
+            text = copy.REMOVED_BY_OWNER_FEED if target.feed_mode else copy.REMOVED_BY_OWNER
+            await notifier.send(RenderedMessage(text))
         await self.hub.remove(target.telegram_id)
         return [Reply(copy.REMOVED.format(name=target.display_name or "?"))]
 

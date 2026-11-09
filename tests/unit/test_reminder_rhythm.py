@@ -88,6 +88,19 @@ def test_off_no_alert_for_work_the_morning_list_already_showed() -> None:
     assert plan_alerts(NOW, snap, OFF) == ()
 
 
+def test_off_with_a_short_window_no_alert_for_work_the_morning_list_showed() -> None:
+    """Review: with a 12 h window, work due before the next morning list was on this
+    morning's list before it became urgent; it must not be called "just posted"."""
+    off_12 = replace(OFF, reminder_window=12 * H)
+    listed = make_item(due_at=ny(21, 7, 0))  # due tomorrow 7 AM, on today's 8 AM list
+    snap = make_snapshot([listed], last_reminded_at={listed.ref: ny(20, 8, 0)})
+    for hour in (9, 12, 19, 20, 23):
+        assert plan_alerts(ny(20, hour, 5), snap, off_12) == (), hour
+    posted_later = make_item(due_at=ny(21, 7, 0))  # not on the list: still one heads-up
+    fresh = make_snapshot([posted_later])
+    assert [s.kind for s in plan_alerts(ny(20, 19, 5), fresh, off_12)] == [SendKind.NEW_URGENT]
+
+
 def test_off_no_alert_for_work_the_next_morning_list_will_show() -> None:
     tomorrow = make_item(due_at=ny(21, 14, 0))  # urgent, but tomorrow's 8 AM list has it
     assert plan_alerts(NOW, make_snapshot([tomorrow]), OFF) == ()

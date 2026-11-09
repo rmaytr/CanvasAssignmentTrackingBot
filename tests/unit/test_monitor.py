@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -35,6 +35,7 @@ from canvas_tracker.store.repo import (
     LAST_SUCCESSFUL_SYNC_AT,
     LAST_SYNC_ERROR,
     LAST_TICK_AT,
+    SYNC_FAILING_SINCE,
 )
 from tests.factories import NOW
 from tests.hub_helpers import GOOD_TOKEN, FakeDisk, HubEnv, build_hub, sign_up
@@ -60,9 +61,19 @@ async def two_users(tmp_path: Path, **kw: object) -> HubEnv:
     return env
 
 
-def failing(env: HubEnv, telegram_id: int, error: str = "CanvasUnavailable") -> None:
+def failing(
+    env: HubEnv,
+    telegram_id: int,
+    error: str = "CanvasUnavailable",
+    since: datetime | None = None,
+) -> None:
+    """The user's sync fails with ``error``; with ``since``, it has failed since then
+    (also the last good sync, as when it starts failing right after one)."""
     store = env.hub.tenants[telegram_id].store
     store.set_state(LAST_SYNC_ERROR, error)
+    if since is not None:
+        store.set_time(SYNC_FAILING_SINCE, since)
+        store.set_time(LAST_SUCCESSFUL_SYNC_AT, since)
 
 
 def owner_texts(env: HubEnv) -> list[str]:
@@ -86,13 +97,18 @@ def test_decide_alerts_once_per_day_and_resolves_once() -> None:
     assert decide(NOW + ALERT_REPEAT, True, resolved)[0] == "alert"
 
 
-def test_failing_since_ignores_auth_and_uses_the_last_good_sync() -> None:
+def test_failing_since_ignores_auth_and_uses_the_first_failure() -> None:
     ok = Watched(1, "A", last_ok=NOW - 7 * H)
     assert failing_since(ok, None) is None  # no error
-    broken = Watched(1, "A", last_ok=NOW - 7 * H, last_error="CanvasUnavailable")
+    broken = Watched(
+        1, "A", last_ok=NOW - 9 * H, last_error="CanvasUnavailable", failing_since=NOW - 7 * H
+    )
     assert failing_since(broken, NOW) == NOW - 7 * H
     never = Watched(1, "A", last_error="CanvasUnavailable")
     assert failing_since(never, NOW - H) == NOW - H
+    # an old last good sync alone (the server was down) isn't failing time
+    old = Watched(1, "A", last_ok=NOW - 9 * H, last_error="CanvasUnavailable")
+    assert failing_since(old, NOW) == NOW
     auth = Watched(1, "A", last_ok=NOW - 9 * H, last_error="CanvasAuthError", auth_failed=True)
     assert failing_since(auth, NOW) is None
 
@@ -140,8 +156,7 @@ def test_disk_is_read_at_most_every_ten_minutes(tmp_path: Path) -> None:
 async def test_sync_failing_for_six_hours_alerts_the_owner_once(tmp_path: Path) -> None:
     env = await two_users(tmp_path)
     store = env.hub.tenants[2].store
-    failing(env, 2)
-    store.set_time(LAST_SUCCESSFUL_SYNC_AT, NOW - SYNC_FAILING_AFTER + timedelta(minutes=1))
+    failing(env, 2, since=NOW - SYNC_FAILING_AFTER + timedelta(minutes=1))
     assert await env.hub.watch() == []  # not six hours yet
     env.clock.now = NOW + timedelta(minutes=1)
     [alert] = await env.hub.watch()
@@ -184,8 +199,7 @@ async def test_rejected_token_never_alerts_the_owner(tmp_path: Path) -> None:
 
 async def test_alert_state_survives_a_restart(tmp_path: Path) -> None:
     env = await two_users(tmp_path)
-    failing(env, 2)
-    env.hub.tenants[2].store.set_time(LAST_SUCCESSFUL_SYNC_AT, NOW - 7 * H)
+    failing(env, 2, since=NOW - 7 * H)
     assert len(await env.hub.watch()) == 1
     saved = json.loads(env.hub.registry.get_state(ALERTS_STATE_KEY) or "{}")
     assert saved["sync:2"]["active"] is True
@@ -199,8 +213,7 @@ async def test_alert_state_survives_a_restart(tmp_path: Path) -> None:
 async def test_undelivered_alert_is_tried_again(tmp_path: Path) -> None:
     env = await two_users(tmp_path)
     env.notifiers[1].fail_times = 1
-    failing(env, 2)
-    env.hub.tenants[2].store.set_time(LAST_SUCCESSFUL_SYNC_AT, NOW - 7 * H)
+    failing(env, 2, since=NOW - 7 * H)
     assert await env.hub.watch() == []
     assert len(await env.hub.watch()) == 1
 
@@ -215,8 +228,7 @@ async def test_no_owner_yet_means_no_alerts_until_there_is_one(tmp_path: Path) -
 
 async def test_removed_user_leaves_no_alert_behind(tmp_path: Path) -> None:
     env = await two_users(tmp_path)
-    failing(env, 2)
-    env.hub.tenants[2].store.set_time(LAST_SUCCESSFUL_SYNC_AT, NOW - 7 * H)
+    failing(env, 2, since=NOW - 7 * H)
     assert len(await env.hub.watch()) == 1
     await env.hub.remove(2)
     assert await env.hub.watch() == []  # no "resolved" for someone who left
@@ -225,8 +237,7 @@ async def test_removed_user_leaves_no_alert_behind(tmp_path: Path) -> None:
 
 async def test_tenant_rebuilt_mid_check_keeps_its_alert(tmp_path: Path) -> None:
     env = await two_users(tmp_path)
-    failing(env, 2)
-    env.hub.tenants[2].store.set_time(LAST_SUCCESSFUL_SYNC_AT, NOW - 7 * H)
+    failing(env, 2, since=NOW - 7 * H)
     assert len(await env.hub.watch()) == 1
     tenant = env.hub.tenants.pop(2)  # as during /settings: the old tenant is closing
     assert await env.hub.watch() == []
@@ -408,7 +419,7 @@ async def test_health_for_the_owner_only(tmp_path: Path) -> None:
     assert "Last check: today 11:00 AM (3 h 5 m ago)" in lines  # NOW in Chicago
     assert "Disk: 50 GB free of 100 GB (50%)" in lines
     assert "Email: set up" in lines
-    assert "Sync problems: 1 (0 token rejected, 1 can't sync)" in lines
+    assert "Sync problems: 1 (0 token or feed link rejected, 1 can't sync)" in lines
     assert "Open alerts: 0" in lines
     assert "Mia" not in reply.text
     assert env.signup.health(friend)[0].text == copy.OWNER_ONLY

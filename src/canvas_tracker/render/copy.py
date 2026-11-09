@@ -177,6 +177,9 @@ SYNC_TOO_SOON = "⏳ You just synced. Try /sync again in {seconds} s (the bot al
 
 # Stale data (PRD anti-goal: never present stale data as current)
 STALE_NOTE = "⚠️ Based on Canvas data from {since}. If you've already submitted, ignore this."
+STALE_NOTE_FEED = (
+    "⚠️ Based on Canvas data from {since}. If you've already handed it in, tap ✅ Done."
+)
 STALE_NOTE_NEVER = "⚠️ Haven't reached Canvas yet, so this may be out of date."
 
 # Friends mode: sign-up, settings and owner commands
@@ -195,8 +198,8 @@ SIGNUP_INTRO = (
     "of the person who runs this bot. They could technically access it, so only sign up if "
     "you trust them.\n"
     "• The bot only reads Canvas. It never submits, posts or changes anything.\n"
-    "• /disconnect deletes everything right away. You can also cancel the token any time "
-    "in Canvas (Account → Settings → Approved Integrations)."
+    "• /disconnect deletes everything right away. If you use a token, you can also cancel "
+    "it any time in Canvas (Account → Settings → Approved Integrations)."
 )
 ASK_URL = (
     "Step 1 of 5: What's your school's Canvas address?\n"
@@ -210,10 +213,11 @@ URL_INVALID = (
 URL_UNREACHABLE = "I couldn't find that address on the internet. Check it and send it again."
 ASK_TOKEN = (
     "Step 2 of 5: How should the bot read your Canvas? There are two ways.\n\n"
-    "🔑 Access token (best: knows what you've submitted)\n"
+    "🔑 Access token (reminders stop by themselves once you submit)\n"
     "1. Tap 🔗 Open Canvas settings below (or open Canvas → Account → Settings).\n"
     '2. Scroll to "Approved Integrations" and tap "+ New Access Token".\n'
-    '3. Purpose: "Reminder bot". For the expiry, pick the latest date Canvas allows.\n'
+    '3. Purpose: "Reminder bot". Expiry: 120 days or less, so a leaked token can\'t be '
+    "used for long. I'll tell you when it stops working.\n"
     "4. Copy the token and paste it here. I'll delete your message right away.\n\n"
     "📅 Calendar feed link (no token; you mark things done yourself)\n"
     "If your school doesn't allow tokens, or you'd rather not make one, tap 📅 below."
@@ -289,8 +293,9 @@ TOKEN_PROBLEMS = {
     "unreachable": "✗ I couldn't reach Canvas at {host}. Paste the token again in a minute, "
     "or {fix}",
     "not_canvas": "✗ {host} doesn't answer like Canvas, or doesn't accept tokens. To fix it, {fix}",
-    "no_planner": "✗ The token works, but Canvas won't let it read your To Do list. "
-    "Your school may restrict tokens. Paste another token or send /disconnect.",
+    "no_planner": "✗ The token works, but Canvas won't let it read your To Do list: your "
+    "school may restrict tokens. Tap 📅 Calendar feed link instead below (no token needed), "
+    "or paste another token.",
 }
 TOKEN_SAVED = "✓ Token works. It's stored encrypted."
 TOKEN_DELETED = "🧹 I deleted your message with the token from this chat."
@@ -365,6 +370,10 @@ RHYTHM_ON = (
     "When something is due within {window}, you get a reminder every {interval} "
     "until it's submitted."
 )
+RHYTHM_ON_FEED = (
+    "When something is due within {window}, you get a reminder every {interval} "
+    "until you mark it ✅ Done."
+)
 RHYTHM_OFF = (
     "Repeating reminders are off: besides the morning list you only get one-off alerts "
     "(new last-minute work, deadlines overnight, overdue work, snooze ends)."
@@ -374,7 +383,7 @@ RHYTHM_SHORT_OFF = "off (morning list and one-off alerts only)"
 REMINDERS_MENU = (
     "⏰ Reminders\n"
     "Repeat: {interval}\n"
-    "Counts as urgent: due within {window}\n"
+    "Start reminding: due within {window}\n"
     "Morning list covers: the next {lookahead}\n\n"
     'Tap to change. "No repeats" keeps the morning list and one-off alerts '
     "(new last-minute work, deadlines overnight, overdue work, snooze ends)."
@@ -421,15 +430,26 @@ DISCONNECT_CONFIRM = (
     "This deletes your settings, your Canvas token and everything the bot remembers about "
     "your assignments. Are you sure?"
 )
+DISCONNECT_CONFIRM_FEED = (
+    "This deletes your settings, your calendar feed link and everything the bot remembers "
+    "about your assignments. Are you sure?"
+)
 BTN_DISCONNECT_YES = "Yes, delete everything"
 BTN_DISCONNECT_NO = "No, keep it"
 DISCONNECTED = (
     "🗑 Done. Everything is deleted. To be safe, also delete the token in Canvas: "
     "Account → Settings → Approved Integrations. Thanks for trying the bot!"
 )
+DISCONNECTED_FEED = (
+    "🗑 Done. Everything is deleted, including your calendar feed link. Thanks for trying the bot!"
+)
 REMOVED_BY_OWNER = (
     "The bot's owner removed your access and your data was deleted. You can also delete the "
     "token in Canvas: Account → Settings → Approved Integrations."
+)
+REMOVED_BY_OWNER_FEED = (
+    "The bot's owner removed your access and your data was deleted, including your calendar "
+    "feed link."
 )
 DISCONNECT_KEPT = "OK, nothing was deleted."
 OWNER_ONLY = "Only the bot's owner can do that."
@@ -472,7 +492,7 @@ HEALTH_EMAIL_OFF = "not set up"
 HEALTH_EMAIL_OK = "set up"
 HEALTH_EMAIL_FAILING = "set up, ⚠️ the last {count} emails failed"
 HEALTH_SYNC_NONE = "none"
-HEALTH_SYNC = "{count} ({auth} token rejected, {other} can't sync)"
+HEALTH_SYNC = "{count} ({auth} token or feed link rejected, {other} can't sync)"
 
 # Owner alerts (at most once per 24 h each; names and Telegram IDs only, never Canvas data)
 MONITOR_SYNC_FAILING = (

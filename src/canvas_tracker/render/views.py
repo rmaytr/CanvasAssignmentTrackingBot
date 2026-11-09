@@ -136,7 +136,7 @@ def rhythm_sentence(s: Settings) -> str:
     """One sentence on how often reminders come, for the welcome and all-set messages."""
     if s.reminder_interval is None:
         return copy.RHYTHM_OFF
-    return copy.RHYTHM_ON.format(
+    return (copy.RHYTHM_ON_FEED if s.calendar_feed else copy.RHYTHM_ON).format(
         window=format_span(s.reminder_window), interval=format_span(s.reminder_interval)
     )
 

@@ -61,4 +61,5 @@ def stale_note(snap: Snapshot, now: datetime, settings: Settings) -> str:
     last = snap.last_successful_sync_at
     if last is None:
         return copy.STALE_NOTE_NEVER
-    return copy.STALE_NOTE.format(since=format_due(last, now, settings.zone))
+    note = copy.STALE_NOTE_FEED if settings.calendar_feed else copy.STALE_NOTE
+    return note.format(since=format_due(last, now, settings.zone))

@@ -41,7 +41,12 @@ from canvas_tracker.sources.canvas_client import (
 )
 from canvas_tracker.sources.ical import parse_calendar
 from canvas_tracker.sources.planner import PLANNER_PATH
-from canvas_tracker.store.repo import AUTH_FAILED_SINCE, LAST_SUCCESSFUL_SYNC_AT, LAST_SYNC_ERROR
+from canvas_tracker.store.repo import (
+    AUTH_FAILED_SINCE,
+    LAST_SUCCESSFUL_SYNC_AT,
+    LAST_SYNC_ERROR,
+    SYNC_FAILING_SINCE,
+)
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +76,7 @@ async def resolves_publicly(host: str) -> bool:
     """True if every address ``host`` resolves to is public (so it can't be this server)."""
     try:
         infos = await asyncio.get_running_loop().getaddrinfo(host, 443, type=socket.SOCK_STREAM)
-    except OSError:
+    except (OSError, UnicodeError, ValueError):  # UnicodeError: a label over 63 characters
         return False
     addresses = {str(info[4][0]) for info in infos}
     return bool(addresses) and all(is_public_address(a) for a in addresses)
@@ -99,7 +104,11 @@ class HostGuard:
         passed = self._passed.get(host)
         if passed is not None and timedelta(0) <= now - passed < self.ttl:
             return True
-        ok = bool(host) and await self.check(host)
+        try:
+            ok = bool(host) and await self.check(host)
+        except Exception:  # a check that breaks refuses the host rather than crashing
+            log.exception("canvas host check failed")
+            ok = False
         if ok:
             self._passed[host] = now
         else:
@@ -158,6 +167,7 @@ class Hub:
         self.tenants: dict[int, Tenant] = {}
         self.broken: set[int] = set()
         self.host_guard = HostGuard(host_check, clock)
+        self._prune_lock = asyncio.Lock()
         self.token_limiter = RateLimiter(TOKEN_CHECKS_PER_WINDOW, TOKEN_CHECK_WINDOW)
         self.sync_limiter = RateLimiter(1, MANUAL_SYNC_WINDOW)
         self.feedback_limiter = RateLimiter(FEEDBACK_PER_WINDOW, FEEDBACK_WINDOW)
@@ -271,18 +281,29 @@ class Hub:
     async def prune_signups(self) -> list[int]:
         """Forget sign-ups that stalled for 7 days, so they stop taking a MAX_USERS slot.
         Only onboarding users go; the owner and active users never do. Each one is told
-        (best effort) how to come back."""
+        (best effort) how to come back.
+
+        Runs one at a time (the tick and /start both call it), and each person is
+        re-checked as they are deleted: sending the notices takes a while, and someone
+        who comes back in the meantime is kept and told nothing."""
         from canvas_tracker.notify.base import NotifyError
         from canvas_tracker.render import copy
         from canvas_tracker.render.message import RenderedMessage
 
-        owner = self.owner_id()
-        stale = self.registry.stale_signups(self.clock() - SIGNUP_ABANDONED_AFTER)
-        removed = [telegram_id for telegram_id in stale if telegram_id != owner]
-        for telegram_id in removed:
-            await self.remove(telegram_id)
-            with contextlib.suppress(NotifyError):
-                await self.notifier_factory(telegram_id).send(RenderedMessage(copy.SIGNUP_EXPIRED))
+        async with self._prune_lock:
+            owner = self.owner_id()
+            cutoff = self.clock() - SIGNUP_ABANDONED_AFTER
+            removed: list[int] = []
+            for telegram_id in self.registry.stale_signups(cutoff):
+                if telegram_id == owner:
+                    continue
+                if not self.registry.delete_stale_signup(telegram_id, cutoff):
+                    continue  # active again since the list was made
+                await self.remove(telegram_id)  # their files; the row is already gone
+                removed.append(telegram_id)
+                with contextlib.suppress(NotifyError):
+                    notifier = self.notifier_factory(telegram_id)
+                    await notifier.send(RenderedMessage(copy.SIGNUP_EXPIRED))
         if removed:
             log.info("removed abandoned sign-ups", extra={"count": len(removed)})
         return removed
@@ -324,6 +345,7 @@ class Hub:
                     last_error=store.get_state(LAST_SYNC_ERROR),
                     auth_failed=store.get_time(AUTH_FAILED_SINCE) is not None,
                     tick_started_at=tenant.running_since,
+                    failing_since=store.get_time(SYNC_FAILING_SINCE),
                 )
             )
         return found
@@ -399,6 +421,9 @@ class Hub:
                 return Verification(None, zone)
         except TimeoutError:
             return Verification("unreachable")
+        except Exception:  # whatever else the host does, the person still gets an answer
+            log.exception("canvas token check failed")
+            return Verification("not_canvas")
         finally:
             await client.aclose()
 
@@ -413,18 +438,19 @@ class Hub:
         try:
             async with asyncio.timeout(VERIFY_TIMEOUT_S):
                 response = await client.fetch()
+                # Parsing is CPU work on a body from a host the user chose: off the loop.
+                calendar = await asyncio.to_thread(parse_calendar, response.body, ZoneInfo("UTC"))
         except TimeoutError:
             return Verification("unreachable")
         except CanvasAuthError:
             return Verification("rejected")
         except CanvasUnavailable:
             return Verification("unreachable")
-        except CanvasProtocolError:
+        except (CanvasProtocolError, ValueError):
+            return Verification("not_feed")
+        except Exception:  # whatever else the link does, the person still gets an answer
+            log.exception("calendar feed check failed")
             return Verification("not_feed")
         finally:
             await client.aclose()
-        try:
-            calendar = parse_calendar(response.body, ZoneInfo("UTC"))
-        except ValueError:
-            return Verification("not_feed")
         return Verification(None, _zone(calendar.time_zone))
