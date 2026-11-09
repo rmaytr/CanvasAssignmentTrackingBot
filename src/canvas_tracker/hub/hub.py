@@ -38,6 +38,8 @@ SIGNUP_ABANDONED_AFTER = timedelta(days=7)
 TOKEN_CHECKS_PER_WINDOW = 5
 TOKEN_CHECK_WINDOW = timedelta(minutes=15)
 MANUAL_SYNC_WINDOW = timedelta(minutes=1)
+FEEDBACK_PER_WINDOW = 5
+FEEDBACK_WINDOW = timedelta(hours=1)
 Problem = Literal["rejected", "unreachable", "not_canvas", "no_planner"]
 
 
@@ -138,6 +140,7 @@ class Hub:
         self.host_guard = HostGuard(host_check, clock)
         self.token_limiter = RateLimiter(TOKEN_CHECKS_PER_WINDOW, TOKEN_CHECK_WINDOW)
         self.sync_limiter = RateLimiter(1, MANUAL_SYNC_WINDOW)
+        self.feedback_limiter = RateLimiter(FEEDBACK_PER_WINDOW, FEEDBACK_WINDOW)
 
     # --- owner ---------------------------------------------------------------
 

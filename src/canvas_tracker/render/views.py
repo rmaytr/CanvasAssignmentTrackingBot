@@ -14,7 +14,7 @@ from canvas_tracker.domain.status import REMINDABLE_TYPES, is_overdue_accepting
 from canvas_tracker.planning.timeutil import at_local, local_date
 from canvas_tracker.render import copy
 from canvas_tracker.render.digest import BUTTONS_PER_ROW, MAX_DIGEST_BUTTONS, explain, item_score
-from canvas_tracker.render.format import format_due, split_blocks
+from canvas_tracker.render.format import format_due, format_span, mask_email, split_blocks
 from canvas_tracker.render.items import default_stale, heading, stale_banner
 from canvas_tracker.render.message import Button, RenderedMessage, item_callback
 
@@ -132,6 +132,33 @@ def render_week(snap: Snapshot, now: datetime, settings: Settings) -> list[Rende
     return _list_view(copy.WEEK_HEADER, copy.NOTHING_WEEK, groups, snap, now, settings)
 
 
+def rhythm_sentence(s: Settings) -> str:
+    """One sentence on how often reminders come, for the welcome and all-set messages."""
+    if s.reminder_interval is None:
+        return copy.RHYTHM_OFF
+    return copy.RHYTHM_ON.format(
+        window=format_span(s.reminder_window), interval=format_span(s.reminder_interval)
+    )
+
+
+def rhythm_short(s: Settings) -> str:
+    """The rhythm in a few words, as /settings and /status show it."""
+    if s.reminder_interval is None:
+        return copy.RHYTHM_SHORT_OFF
+    return copy.RHYTHM_SHORT_ON.format(
+        interval=format_span(s.reminder_interval), window=format_span(s.reminder_window)
+    )
+
+
+def email_label(address: str | None, *, available: bool, masked: bool) -> str:
+    """The email line of /settings (full address) and /status (masked address)."""
+    if not available:
+        return copy.EMAIL_UNAVAILABLE_LABEL
+    if address is None:
+        return copy.EMAIL_OFF_LABEL
+    return mask_email(address) if masked else address
+
+
 @dataclass(frozen=True, slots=True)
 class StatusInfo:
     last_successful_sync_at: datetime | None
@@ -140,6 +167,10 @@ class StatusInfo:
     next_slot_at: datetime | None
     pause_until: datetime | None
     version: str
+    email_available: bool = False
+    email_address: str | None = None  # masked before it is shown
+    next_event_at: datetime | None = None  # when the next 📅 heads-up goes out
+    last_announcement_at: datetime | None = None
 
 
 def render_status(info: StatusInfo, now: datetime, settings: Settings) -> RenderedMessage:
@@ -148,24 +179,33 @@ def render_status(info: StatusInfo, now: datetime, settings: Settings) -> Render
     def when(t: datetime) -> str:
         return format_due(t, now, tz)
 
-    paused = info.pause_until is not None and info.pause_until > now
     off = settings.reminder_interval is None
     if info.next_slot_at:
         slot = when(info.next_slot_at)
     else:
         slot = copy.STATUS_SLOT_OFF if off else copy.STATUS_NO_SLOT
-    values = {
-        "sync": when(info.last_successful_sync_at)
-        if info.last_successful_sync_at
-        else copy.STATUS_NEVER,
-        "token": copy.STATUS_AUTH_FAILED.format(since=when(info.auth_failed_since))
+    sync = when(info.last_successful_sync_at) if info.last_successful_sync_at else None
+    token = (
+        copy.STATUS_AUTH_FAILED.format(since=when(info.auth_failed_since))
         if info.auth_failed_since
-        else copy.STATUS_AUTH_OK,
-        "digest": when(info.next_digest_at),
-        "slot": slot,
-        "pause": copy.STATUS_PAUSED.format(until=when(info.pause_until))
-        if paused and info.pause_until is not None
-        else (copy.STATUS_REMINDERS_OFF if off else copy.STATUS_REMINDERS_ON),
-        "version": info.version,
-    }
-    return RenderedMessage("\n".join(line.format(**values) for line in copy.STATUS_LINES))
+        else copy.STATUS_AUTH_OK
+    )
+    lines = [
+        copy.STATUS_SYNC.format(sync=sync or copy.STATUS_NEVER),
+        copy.STATUS_TOKEN.format(token=token),
+        copy.STATUS_DIGEST.format(digest=when(info.next_digest_at)),
+        copy.STATUS_SLOT.format(slot=slot),
+        copy.STATUS_REMINDERS_OFF
+        if off
+        else copy.STATUS_REMINDERS_ON.format(rhythm=rhythm_short(settings)),
+    ]
+    if info.pause_until is not None and info.pause_until > now:
+        lines.append(copy.STATUS_PAUSED.format(until=when(info.pause_until)))
+    email = email_label(info.email_address, available=info.email_available, masked=True)
+    lines.append(copy.STATUS_EMAIL.format(email=email))
+    if info.next_event_at is not None:
+        lines.append(copy.STATUS_NEXT_EVENT.format(when=when(info.next_event_at)))
+    if info.last_announcement_at is not None:
+        lines.append(copy.STATUS_LAST_ANNOUNCEMENT.format(when=when(info.last_announcement_at)))
+    lines.append(copy.STATUS_VERSION.format(version=info.version))
+    return RenderedMessage("\n".join(lines))

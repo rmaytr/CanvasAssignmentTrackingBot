@@ -172,6 +172,7 @@ async def test_settings_edits_rebuild_the_tenant(tmp_path: Path) -> None:
         "set:rem",
         "set:tok",
         "set:url",
+        "set:em",
     ]
 
     env.signup.begin_edit(user, "tz")

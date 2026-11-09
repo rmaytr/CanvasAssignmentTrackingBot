@@ -11,6 +11,11 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Your own reminder rhythm.** `/settings → ⏰ Reminders` lets each person choose how often reminders repeat (every 1, 2, 3 or 4 hours, or **no repeats**), how early work counts as urgent (12, 24 or 48 hours before it's due) and how far ahead the morning list looks (7, 14 or 21 days). With no repeats, the morning list and the one-off messages (new last-minute work, work due overnight, overdue work, the end of a snooze) still come. Everyone starts on the bot-wide defaults from `.env`, so nothing changes for existing users until they choose. The end of sign-up points to the new menu.
 - Changing the interval mid-cycle restarts the cycle from its latest reminder: nothing is sent twice and nothing is skipped.
 
+- **`/feedback your message`** sends a note to the person who runs the bot, with the sender's Telegram name and ID (never any Canvas data). Up to 5 an hour per person, also during sign-up. A note containing a Canvas token is deleted from the chat and not sent. Listed in `/help` and the command menu.
+- **A fuller `/status`:** it now also shows the reminder rhythm, whether email is on (the address masked, e.g. `m***@school.edu`, or "not available on this bot"), when the next 📅 event heads-up goes out and when the latest announcement was posted.
+- **`/settings → 📧 Email`** explains `/email` and shows the current address, so every setting can be reached from `/settings`. The email line says "not available on this bot" when the bot has no mail server.
+- Owner `/users` shows whether each person gets email (yes/no only).
+
 - **Announcements and events are no longer treated as homework.** A course announcement now gets one 📢 message when it's posted, a calendar event gets a 📅 heads-up an hour before it starts, and the morning list shows both under a new *Announcements & events* section. Neither is ever reminded, ranked or reported as overdue.
 
 ### Fixed

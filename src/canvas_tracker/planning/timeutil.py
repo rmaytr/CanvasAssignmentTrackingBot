@@ -29,6 +29,15 @@ def in_quiet(instant: datetime, tz: ZoneInfo, start: time | None, end: time | No
     return local >= start or local < end
 
 
+def quiet_ends_at(instant: datetime, tz: ZoneInfo, start: time, end: time) -> datetime:
+    """When the quiet window that ``instant`` falls in ends (``instant`` must be quiet)."""
+    local = instant.astimezone(tz)
+    day = local.date()
+    if start > end and local.time() >= start:  # an overnight window, before midnight
+        day += timedelta(days=1)
+    return at_local(day, end, tz)
+
+
 def next_quiet_window(
     now: datetime, tz: ZoneInfo, start: time, end: time
 ) -> tuple[datetime, datetime]:

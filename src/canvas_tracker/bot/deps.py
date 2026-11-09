@@ -23,3 +23,6 @@ class BotDeps:
     hidden_courses: frozenset[str] = frozenset()
     # Records a manual /sync and returns how long to wait if it came too soon (else None).
     sync_wait: Callable[[], timedelta | None] = lambda: None
+    # Whether this bot can send email, and this user's confirmed address (for /status).
+    email_available: bool = False
+    email_address: Callable[[], str | None] = lambda: None

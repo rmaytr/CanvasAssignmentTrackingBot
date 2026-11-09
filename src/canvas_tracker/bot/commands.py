@@ -15,6 +15,7 @@ from canvas_tracker.bot.deps import BotDeps
 from canvas_tracker.domain.done_rule import is_done
 from canvas_tracker.notify.telegram import to_markup
 from canvas_tracker.planning.keys import digest_key
+from canvas_tracker.planning.news import latest_announcement_at, next_event_heads_up
 from canvas_tracker.planning.reminders import next_reminder_at
 from canvas_tracker.planning.timeutil import at_local, local_date
 from canvas_tracker.render import copy
@@ -128,6 +129,10 @@ def status_cmd(deps: BotDeps) -> Handler:
             next_slot_at=next_slot,
             pause_until=snap.pause_until,
             version=__version__,
+            email_available=deps.email_available,
+            email_address=deps.email_address() if deps.email_available else None,
+            next_event_at=next_event_heads_up(now, snap, deps.settings),
+            last_announcement_at=latest_announcement_at(now, snap),
         )
         await _reply_text(update, render_status(info, now, deps.settings).text)
 

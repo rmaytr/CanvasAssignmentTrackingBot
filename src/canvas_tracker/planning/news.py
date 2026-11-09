@@ -22,7 +22,7 @@ from canvas_tracker.domain.models import (
     Snapshot,
 )
 from canvas_tracker.planning.keys import announcement_key, event_soon_key
-from canvas_tracker.planning.timeutil import at_local, in_quiet, local_date
+from canvas_tracker.planning.timeutil import at_local, in_quiet, local_date, quiet_ends_at
 
 
 def _by_date(items: list[Item]) -> list[Item]:
@@ -59,3 +59,43 @@ def plan_news(now: datetime, snap: Snapshot, settings: Settings) -> tuple[Send, 
             if key not in snap.sent_keys:
                 sends.append(Send(key, SendKind.EVENT_SOON, (item.ref,)))
     return tuple(sends)
+
+
+def next_event_heads_up(now: datetime, snap: Snapshot, settings: Settings) -> datetime | None:
+    """When the next 📅 heads-up should go out (for /status): an hour before the event,
+    later if /pause or quiet hours hold it back. Events whose heads-up was already sent,
+    or that quiet hours or /pause would hide entirely, are left out."""
+    paused_until = snap.pause_until if snap.pause_until and snap.pause_until > now else None
+    best: datetime | None = None
+    for item in snap.items:
+        start = item.due_at
+        if item.type is not ItemType.EVENT or item.gone_at is not None or start is None:
+            continue
+        if start <= now or event_soon_key(item) in snap.sent_keys:
+            continue
+        at = max(start - EVENT_LEAD, now)
+        if paused_until is not None:
+            at = max(at, paused_until)
+        quiet_start, quiet_end = settings.quiet_start, settings.quiet_end
+        if (
+            quiet_start is not None
+            and quiet_end is not None
+            and in_quiet(at, settings.zone, quiet_start, quiet_end)
+        ):
+            at = quiet_ends_at(at, settings.zone, quiet_start, quiet_end)
+        if at < start and (best is None or at < best):
+            best = at
+    return best
+
+
+def latest_announcement_at(now: datetime, snap: Snapshot) -> datetime | None:
+    """When the most recent announcement still on Canvas was posted (for /status)."""
+    posted = [
+        i.due_at
+        for i in snap.items
+        if i.type is ItemType.ANNOUNCEMENT
+        and i.gone_at is None
+        and i.due_at is not None
+        and i.due_at <= now
+    ]
+    return max(posted, default=None)

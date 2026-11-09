@@ -162,6 +162,8 @@ class Tenant:
             clock=clock,
             sync=self.sync,
             sync_wait=sync_wait or (lambda: None),
+            email_available=mailer_factory is not None,
+            email_address=address,
         )
         self._lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None

@@ -19,6 +19,7 @@ from canvas_tracker.domain.models import MIN_REMINDER_INTERVAL, Settings
 from canvas_tracker.hub.email import EmailSetup
 from canvas_tracker.hub.hub import Hub
 from canvas_tracker.hub.parsing import (
+    contains_canvas_token,
     looks_like_token,
     normalize_canvas_url,
     parse_clock,
@@ -30,8 +31,9 @@ from canvas_tracker.hub.registry import OWNER_KEY, User
 from canvas_tracker.hub.tenant import bot_defaults, user_settings
 from canvas_tracker.notify.base import NotifyError
 from canvas_tracker.render import copy
-from canvas_tracker.render.format import format_due, format_span
+from canvas_tracker.render.format import escape, format_due, format_span
 from canvas_tracker.render.message import Button, RenderedMessage
+from canvas_tracker.render.views import email_label, rhythm_sentence, rhythm_short
 from canvas_tracker.store.repo import AUTH_FAILED_SINCE, LAST_SUCCESSFUL_SYNC_AT
 
 log = logging.getLogger(__name__)
@@ -39,6 +41,7 @@ log = logging.getLogger(__name__)
 Keyboard = tuple[tuple[Button, ...], ...]
 TOKEN_STEPS = frozenset({"token", "edit_token"})
 URL_STEPS = frozenset({"url", "edit_url"})
+FEEDBACK_MAX_CHARS = 3000  # leaves room for the header within Telegram's 4096
 LATEST_DIGEST = time(20, 0)  # leaves a 4 h same-day window for a late morning list
 _KIND_STEPS = {
     "tz": frozenset({"tz", "edit_tz"}),
@@ -129,23 +132,7 @@ def settings_keyboard() -> Keyboard:
         (Button(copy.BTN_SET_TZ, "set:tz"), Button(copy.BTN_SET_DIGEST, "set:dt")),
         (Button(copy.BTN_SET_QUIET, "set:qh"), Button(copy.BTN_SET_REMINDERS, "set:rem")),
         (Button(copy.BTN_SET_TOKEN, "set:tok"), Button(copy.BTN_SET_URL, "set:url")),
-    )
-
-
-def rhythm_sentence(s: Settings) -> str:
-    """One sentence on how often reminders come, for the welcome and all-set messages."""
-    if s.reminder_interval is None:
-        return copy.RHYTHM_OFF
-    return copy.RHYTHM_ON.format(
-        window=format_span(s.reminder_window), interval=format_span(s.reminder_interval)
-    )
-
-
-def rhythm_short(s: Settings) -> str:
-    if s.reminder_interval is None:
-        return copy.RHYTHM_SHORT_OFF
-    return copy.RHYTHM_SHORT_ON.format(
-        interval=format_span(s.reminder_interval), window=format_span(s.reminder_window)
+        (Button(copy.BTN_SET_EMAIL, "set:em"),),
     )
 
 
@@ -504,7 +491,9 @@ class Signup:
             quiet=fmt_quiet(user.quiet),
             reminders=rhythm_short(effective),
             lookahead=format_span(effective.digest_lookahead),
-            email=self.email.address(user) or copy.EMAIL_OFF_LABEL,
+            email=email_label(
+                self.email.address(user), available=self.email.available, masked=False
+            ),
         )
         return [Reply(text, settings_keyboard())]
 
@@ -521,9 +510,11 @@ class Signup:
             "tok": "edit_token",
             "url": "edit_url",
         }
-        if user.status == "active" and what == "rem":
+        if user.status == "active" and what in ("rem", "em"):
             if user.step is not None:  # leave any half-finished settings change
                 self.registry.update_user(user.telegram_id, step=None, pending_base_url=None)
+            if what == "em":  # an address needs typing, so this explains /email
+                return [Reply(self.email.status(user))]
             return [reminders_menu(self._effective(user))]
         if user.status != "active" or what not in steps:
             return self.prompt(user)
@@ -554,6 +545,44 @@ class Signup:
             return [Reply(copy.DISCONNECT_KEPT)]
         await self.hub.remove(user.telegram_id)
         return [Reply(copy.DISCONNECTED)]
+
+    # --- /feedback ----------------------------------------------------------
+
+    async def feedback(self, user: User, text: str, username: str | None = None) -> list[Reply]:
+        """Pass a note on to the owner over Telegram: the sender's name, Telegram ID and
+        the note itself, never anything from their Canvas. Five per user per hour; a note
+        that couldn't be delivered doesn't count."""
+        body = text.strip()
+        if not body:
+            return [Reply(copy.FEEDBACK_USAGE)]
+        if contains_canvas_token(body):
+            return [Reply(copy.FEEDBACK_HAS_TOKEN)]
+        if len(body) > FEEDBACK_MAX_CHARS:
+            return [Reply(copy.FEEDBACK_TOO_LONG.format(limit=FEEDBACK_MAX_CHARS))]
+        if self.is_owner(user) or user.is_owner:
+            return [Reply(copy.FEEDBACK_OWNER)]
+        owner = self.hub.owner_id()
+        if owner is None:
+            return [Reply(copy.FEEDBACK_FAILED)]
+        now = self.hub.clock()
+        wait = self.hub.feedback_limiter.wait(user.telegram_id, now)
+        if wait is not None:
+            minutes = max(1, math.ceil(wait.total_seconds() / 60))
+            return [Reply(copy.FEEDBACK_TOO_MANY.format(minutes=minutes))]
+        note = copy.FEEDBACK_TO_OWNER.format(
+            name=escape(user.display_name or "?"),
+            telegram_id=user.telegram_id,
+            username=copy.FEEDBACK_USERNAME.format(username=escape(username)) if username else "",
+            signup=copy.FEEDBACK_SIGNING_UP if user.status != "active" else "",
+            text=escape(body),
+        )
+        try:
+            await self.hub.notifier_factory(owner).send(RenderedMessage(note))
+        except NotifyError:
+            log.warning("feedback could not be delivered to the owner")
+            return [Reply(copy.FEEDBACK_FAILED)]
+        self.hub.feedback_limiter.hit(user.telegram_id, now)
+        return [Reply(copy.FEEDBACK_SENT)]
 
     # --- owner commands ------------------------------------------------------
 
@@ -592,6 +621,9 @@ class Signup:
                     you=copy.USERS_YOU if other.telegram_id == user.telegram_id else "",
                     host=urlsplit(other.canvas_base_url or "").hostname or "—",
                     state=state,
+                    email=copy.USERS_EMAIL_ON
+                    if self.email.available and other.email_sealed is not None
+                    else copy.USERS_EMAIL_OFF,
                 )
             )
         return [Reply("\n".join(lines))]

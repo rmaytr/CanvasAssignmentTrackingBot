@@ -170,7 +170,8 @@ def test_status_says_when_repeating_reminders_are_off() -> None:
     assert f"Next reminder: {copy.STATUS_SLOT_OFF}" in text
     assert copy.STATUS_REMINDERS_OFF in text
     on = render_status(info, NOW, make_settings()).text
-    assert copy.STATUS_REMINDERS_ON in on and copy.STATUS_NO_SLOT in on
+    assert "Reminders: every 2 hours, for work due within 24 hours" in on
+    assert copy.STATUS_NO_SLOT in on
 
 
 # --- /settings → ⏰ Reminders ------------------------------------------------------------

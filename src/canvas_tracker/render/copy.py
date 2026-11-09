@@ -84,6 +84,7 @@ HELP = "\n".join(
         "/pause 3h | 30m | until 18:00 | off: pause reminders",
         "/settings: time zone, morning time, quiet hours, reminders, Canvas token or address",
         "/email you@school.edu | off: also get the morning list and deadline emails",
+        "/feedback your message: send a note to the person who runs this bot",
         "/disconnect: delete everything the bot knows about you",
         "/help: this list",
     ]
@@ -116,19 +117,19 @@ WEEK_HEADER = "🗓 Next 7 days"
 NOTHING_WEEK = "Nothing due in the next 7 days 🎉"
 TIER_MEDIUM = "🟡 MEDIUM"
 TIER_LOW = "⚪ LOW"
-STATUS_LINES = (
-    "Last sync: {sync}",
-    "Token: {token}",
-    "Next digest: {digest}",
-    "Next reminder: {slot}",
-    "{pause}",
-    "Version: {version}",
-)
+STATUS_SYNC = "Last sync: {sync}"
+STATUS_TOKEN = "Token: {token}"
+STATUS_DIGEST = "Next digest: {digest}"
+STATUS_SLOT = "Next reminder: {slot}"
+STATUS_EMAIL = "Email: {email}"
+STATUS_NEXT_EVENT = "Next event heads-up: {when}"
+STATUS_LAST_ANNOUNCEMENT = "Last announcement: {when}"
+STATUS_VERSION = "Version: {version}"
 STATUS_NEVER = "never"
 STATUS_AUTH_OK = "OK"
 STATUS_AUTH_FAILED = "failed since {since}"
 STATUS_NO_SLOT = "none scheduled"
-STATUS_REMINDERS_ON = "Reminders: on"
+STATUS_REMINDERS_ON = "Reminders: {rhythm}"
 STATUS_SLOT_OFF = "none (repeating reminders are off)"
 STATUS_REMINDERS_OFF = "Reminders: morning list and one-off alerts only (/settings → ⏰ Reminders)"
 STATUS_PAUSED = "Paused until {until}"
@@ -248,7 +249,7 @@ SETTINGS = (
     "Reminders: {reminders}\n"
     "Morning list covers: the next {lookahead}\n"
     "Email: {email}\n\n"
-    "Tap what you'd like to change. /email changes the email address."
+    "Tap what you'd like to change."
 )
 BTN_SET_TZ = "🌎 Time zone"
 BTN_SET_DIGEST = "☀️ Morning time"
@@ -256,6 +257,7 @@ BTN_SET_QUIET = "🌙 Quiet hours"
 BTN_SET_TOKEN = "🔑 Canvas token"
 BTN_SET_URL = "🏫 Canvas address"
 BTN_SET_REMINDERS = "⏰ Reminders"
+BTN_SET_EMAIL = "📧 Email"
 
 # Reminder rhythm (/settings → ⏰ Reminders)
 SPAN_MINUTES = "{n} minutes"
@@ -336,7 +338,9 @@ OWNER_ONLY = "Only the bot's owner can do that."
 INVITE_LINK = "Send this link to one friend. It works once and expires in 7 days:\n{link}"
 INVITE_NO_USERNAME = "I can't make links until the bot has a username (set one in @BotFather)."
 USERS_HEADER = "👥 Users ({count} of {max})"
-USERS_LINE = "{n}. {name}{you} · {host} · {state}"
+USERS_LINE = "{n}. {name}{you} · {host} · {state} · email {email}"
+USERS_EMAIL_ON = "yes"
+USERS_EMAIL_OFF = "no"
 USERS_YOU = " (you)"
 USERS_STATE_SETUP = "setting up"
 USERS_STATE_OK = "✓ synced {when}"
@@ -357,12 +361,14 @@ BOT_COMMANDS = (
     ("pause", "Pause reminders, e.g. /pause 3h"),
     ("settings", "Time zone, times, reminders, Canvas token"),
     ("email", "Get emails too, e.g. /email you@school.edu"),
+    ("feedback", "Send a note to the person who runs the bot"),
     ("help", "All commands"),
     ("disconnect", "Delete everything about you"),
 )
 
 # Email: the /email command
 EMAIL_OFF_LABEL = "off"
+EMAIL_UNAVAILABLE_LABEL = "not available on this bot"
 EMAIL_UNAVAILABLE = "Email isn't set up on this bot. Ask the person who runs it."
 EMAIL_STATUS_ON = (
     "📧 Emails go to {address}: the morning list, and a heads-up 2 hours before each "
@@ -406,3 +412,23 @@ EMAIL_FOOTER = (
     "You get these emails because you asked the Telegram bot for them. "
     "Send /email off to the bot to stop."
 )
+
+# /feedback: a note to the person who runs the bot
+FEEDBACK_USAGE = (
+    "Send /feedback followed by your message, for example "
+    "/feedback The morning list came late today. It goes to the person who runs this bot."
+)
+FEEDBACK_SENT = "✓ Thanks, sent to the person who runs this bot."
+FEEDBACK_OWNER = "You run this bot, so there's nobody to forward that to. Noted anyway 🙂"
+FEEDBACK_TOO_LONG = "That's a bit long. Please keep it under {limit} characters."
+FEEDBACK_TOO_MANY = "⏳ You've sent a lot of feedback this hour. Try again in {minutes} min."
+FEEDBACK_FAILED = "I couldn't pass that on right now. Please try again later."
+FEEDBACK_HAS_TOKEN = (
+    "That message seems to contain a Canvas access token, so I didn't send it. "
+    "Please send your feedback again without the token."
+)
+FEEDBACK_TO_OWNER = (
+    "💬 Feedback from {name} (Telegram ID {telegram_id}{username}{signup}):\n\n{text}"
+)
+FEEDBACK_USERNAME = ", @{username}"
+FEEDBACK_SIGNING_UP = ", still signing up"

@@ -56,15 +56,21 @@ class EmailSetup:
         except ValueError:
             return None
 
+    def status(self, user: User) -> str:
+        """What /email with no argument (and /settings → 📧 Email) says."""
+        if not self.available:
+            return copy.EMAIL_UNAVAILABLE
+        current = self.address(user)
+        if current is None:
+            return copy.EMAIL_STATUS_OFF
+        return copy.EMAIL_STATUS_ON.format(address=current)
+
     async def command(self, user: User, arg: str | None) -> list[str]:
         if not self.available:
             return [copy.EMAIL_UNAVAILABLE]
         value = (arg or "").strip()
         if not value:
-            current = self.address(user)
-            if current is None:
-                return [copy.EMAIL_STATUS_OFF]
-            return [copy.EMAIL_STATUS_ON.format(address=current)]
+            return [self.status(user)]
         if value.lower() in OFF_WORDS:
             return await self._off(user)
         if value.isdigit() and len(value) == CODE_DIGITS:

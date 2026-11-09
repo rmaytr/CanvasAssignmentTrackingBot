@@ -157,6 +157,13 @@ async def test_full_flow_through_the_real_application(tmp_path: Path) -> None:
         await send(5, "/users")
         assert fake.texts(5)[-1] == copy.OWNER_ONLY
 
+        # feedback (even mid sign-up) reaches the owner through the hub's notifier
+        await send(5, "/feedback Stuck on step 1!")
+        assert fake.texts(5)[-1] == copy.FEEDBACK_SENT
+        note = env.notifiers[1].sent[-1].text
+        assert note.startswith("💬 Feedback from User5 (Telegram ID 5, still signing up)")
+        assert note.endswith("Stuck on step 1!")
+
         # leaving
         await send(5, "/disconnect")
         await tap(5, "bye:yes")

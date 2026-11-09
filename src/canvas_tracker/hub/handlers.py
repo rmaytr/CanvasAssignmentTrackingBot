@@ -239,6 +239,29 @@ def email_cmd(signup: Signup) -> Handler:
     return handler
 
 
+def feedback_cmd(signup: Signup) -> Handler:
+    """/feedback <text>: the whole message after the command, line breaks included."""
+
+    async def handler(update: Update, _context: Any) -> None:
+        user, message = _current(signup, update), update.effective_message
+        if user is None or message is None:
+            return
+        parts = (message.text or "").split(None, 1)
+        body = parts[1] if len(parts) > 1 else ""
+        if contains_canvas_token(body):  # a token must not stay in the chat history
+            deleted = True
+            try:
+                await message.delete()
+            except TelegramError:
+                deleted = False
+            notice = copy.TOKEN_DELETED if deleted else copy.TOKEN_DELETE_FAILED
+            await send_replies(update, [Reply(notice)])
+        username = update.effective_user.username if update.effective_user else None
+        await send_replies(update, await signup.feedback(user, body, username))
+
+    return handler
+
+
 def register_handlers(app: Application[Any, Any, Any, Any, Any, Any], signup: Signup) -> None:
     # Updates run concurrently (one friend's slow Canvas mustn't stall the others), but
     # each user's own updates still run in order, so sign-up steps never interleave.
@@ -268,6 +291,7 @@ def register_handlers(app: Application[Any, Any, Any, Any, Any, Any], signup: Si
         app.add_handler(CommandHandler(name, serial(routed(signup, factory))))
     app.add_handler(CommandHandler("settings", serial(_simple(signup, signup.settings))))
     app.add_handler(CommandHandler("email", serial(email_cmd(signup))))
+    app.add_handler(CommandHandler("feedback", serial(feedback_cmd(signup))))
     app.add_handler(CommandHandler("cancel", serial(_simple(signup, signup.cancel))))
     app.add_handler(
         CommandHandler("disconnect", serial(_simple(signup, lambda _u: signup.disconnect_prompt())))

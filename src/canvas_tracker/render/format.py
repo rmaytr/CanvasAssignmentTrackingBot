@@ -41,6 +41,14 @@ def safe_link(url: str | None, canvas_host: str) -> str | None:
     return url
 
 
+def mask_email(address: str) -> str:
+    """``mia@school.edu`` → ``m***@school.edu``: enough to recognise, not to read off."""
+    local, at, domain = address.rpartition("@")
+    if not at or not local:
+        return "***"
+    return f"{local[0]}***@{domain}"
+
+
 def format_span(span: timedelta) -> str:
     """A settings-style length of time: "45 minutes", "2 hours", "48 hours", "14 days"."""
     minutes = int(span.total_seconds() // 60)
