@@ -225,7 +225,7 @@ stateDiagram-v2
 | Time zone | `Chicago`, `Pacific`, `EST`, `Pacific Standard Time`, `Europe/Berlin`, or a button | Unknown names; legacy fixed-offset zones |
 | Morning time | `8`, `7:30 am`, `19:00`, `7.45 AM`, or a button | After 8 PM; invalid times |
 | Quiet hours | `23:00-07:00`, `11pm - 7am`, `12 am to 8 am`, `off`, or a button | Ranges that would hide the morning list |
-| Reminder rhythm (`/settings` only) | Buttons: every 1/2/3/4 h or no repeats, urgent within 12/24/48 h, list of 7/14/21 days | Any other value (an old or forged button just shows the menu again) |
+| Reminder rhythm (`/settings` only) | Buttons: every 1/2/3/4 h or no repeats, start reminding 12/24/48 h before, list of 7/14/21 days | Any other value (an old or forged button just shows the menu again) |
 
 ## 7. Data model
 
@@ -348,7 +348,7 @@ A due-date change clears the bot's flags, which is how extensions re-open items.
 | Someone spams `/sync` or token attempts | "You just synced, try again in N s" / "wait N min" | `/sync` at most once a minute per user; at most 5 token checks per user per 15 minutes (in memory, reset on restart) |
 | Canvas rejects the token | One 🔑 message with steps | Re-checks every 6 h, or immediately after a new token is pasted via `/settings` |
 | Canvas stops serving a feed link (401/403/404/410) | One 📅 message: copy a fresh link from Calendar → Calendar Feed | Same as a rejected token (`FeedRejected` is a `CanvasAuthError`), so the owner isn't alerted for it |
-| A calendar feed grows past 5 MB, redirects to another host, or isn't iCalendar | Same as Canvas down | The download stops at 5 MB (counted after decompression); the error class (`FeedTooLarge`, `CanvasProtocolError`) goes into `last_sync_error`, and after 6 h the owner's alert names it |
+| A calendar feed grows past 5 MB, redirects to another host, or isn't iCalendar | Same as Canvas down | The download stops at 5 MB (the bot unpacks gzip itself, so the limit holds while unpacking; stacked encodings are refused); the error class (`FeedTooLarge`, `CanvasProtocolError`) goes into `last_sync_error`, and after 6 h the owner's alert names it |
 | Telegram rate-limits | A slight delay | Honors `RetryAfter`, then retries the claim on the next tick |
 | Crash or restart mid-send | At most one duplicate message | Claims and per-part progress resume the work |
 | Server down for hours | A late morning list (up to 4 h); missed reminder slots skipped | Catches up without a burst of messages |

@@ -17,10 +17,11 @@
 2. **Send your school's Canvas address**: what you see in the browser's address bar
    on Canvas, e.g. `school.instructure.com`.
 3. **Connect Canvas**, one of two ways (see *Token or calendar feed?* below):
-   - **🔑 Access token (best: knows what you've submitted).** In Canvas (the bot sends a
-     button that opens the page): *Account → Settings → Approved Integrations → + New
-     Access Token*. Purpose: `Reminder bot`; for the expiry, pick the latest date Canvas
-     allows. Copy the token and **paste it into the chat**.
+   - **🔑 Access token (reminders stop by themselves once you submit).** In Canvas (the
+     bot sends a button that opens the page): *Account → Settings → Approved Integrations
+     → + New Access Token*. Purpose: `Reminder bot`; expiry: 120 days or less, so a leaked
+     token can't be used for long (the bot tells you when it stops working). Copy the
+     token and **paste it into the chat**.
    - **📅 Calendar feed link (no token; you mark things done yourself).** Tap
      **📅 Calendar feed link instead**, then in Canvas open **Calendar** and tap
      **Calendar Feed** at the bottom right (on a phone, use the browser, not the
@@ -44,7 +45,7 @@ That's it: "✅ All set!". Reminders start at the bot's defaults; change them an
 | Reminders stop when you submit | ✅ by themselves | ❌ tap ✅ Done when you hand something in |
 | Due dates, events, 🔗 links | ✅ | ✅ |
 | Course announcements (📢) | ✅ | ❌ not in the feed |
-| Ranking by share of your grade | ✅ | ❌ ranked by due date (shows "weight unknown") |
+| Ranking by share of your grade | ✅ | ❌ ranked by due date and type only |
 | Works if your school blocks tokens | ❌ | ✅ |
 | What the bot holds | a token as powerful as your password (the bot only uses it to read) | a link that only shows your calendar |
 
@@ -63,8 +64,8 @@ one works.
   submitted. Submitting in Canvas stops them by themselves (within about 10
   minutes). Buttons: ✅ Done, 💤 2h snooze, 🔗 open in Canvas.
   To change the rhythm, send `/settings` and tap **⏰ Reminders**: repeat every 1, 2,
-  3 or 4 hours or not at all, count work as urgent from 12, 24 or 48 hours before
-  it's due, and have the morning list cover 7, 14 or 21 days. With **No repeats** you
+  3 or 4 hours or not at all, start reminding 12, 24 or 48 hours before work is due
+  (the morning list's 🔴 URGENT group stays "due within 24 hours"), and have the morning list cover 7, 14 or 21 days. With **No repeats** you
   still get the morning list and one-off messages (new last-minute work, work due
   overnight, overdue work, the end of a snooze).
 - **Announcements and events**: a 📢 message when a course posts an announcement,

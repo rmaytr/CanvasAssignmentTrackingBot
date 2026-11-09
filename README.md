@@ -137,7 +137,7 @@ You need a Telegram account and an always-on Linux server (Google Cloud's free t
 | `/digest` | Your morning list, right now |
 | `/sync` · `/status` | Check Canvas now · last sync, token health, next list and reminder, reminder rhythm, email, next event heads-up, latest announcement |
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
-| `/settings` | Time zone, morning time, quiet hours, reminder rhythm, email, Canvas token or address |
+| `/settings` | Time zone, morning time, quiet hours, reminder rhythm, email, Canvas token, calendar feed or address |
 | `/email you@school.edu` | Also email the morning list and a heads-up 2 h before each deadline (`/email off` stops it) |
 | `/feedback your message` | Send a note to the person who runs the bot (5 an hour) |
 | `/disconnect` | Delete everything the bot knows about you |
@@ -246,7 +246,7 @@ Canvas tokens are as powerful as a password, so the bot treats them that way:
 - [ ] OAuth with participating schools and stronger protection for a public release (per-user key wrapping)
 - [x] Hardening: rate limits on token checks and `/sync`, abandoned sign-ups free their slot, buttons tied to their database, Canvas host re-checked before each sync
 - [x] Optional email: the morning list and a heads-up 2 hours before each deadline (any SMTP provider)
-- [x] Per-user reminder rhythm: how often (or no repeats), what counts as urgent, how far the morning list looks
+- [x] Per-user reminder rhythm: how often (or no repeats), how early reminders start, how far the morning list looks
 - [x] Owner monitoring: ⚠️ alerts for failing syncs, failing email, a full disk or a stuck check; `/health`; an hourly summary log line
 - [x] **Calendar-feed mode** for schools that block personal tokens (no token needed; you mark work done yourself)
 - [ ] Localization (all copy already lives in one module)

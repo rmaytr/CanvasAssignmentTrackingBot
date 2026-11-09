@@ -58,7 +58,7 @@ People who can't or don't want to make an access token can give the bot their pr
 | Knows what you submitted | ✅ reminders stop by themselves | ❌ you tap ✅ Done |
 | Due dates, events, links | ✅ | ✅ |
 | Announcements | ✅ | ❌ not in the feed |
-| Grade weights for ranking | ✅ | ❌ ranked by due date and type ("weight unknown") |
+| Grade weights for ranking | ✅ | ❌ ranked by due date and type only (no grade-share text) |
 | Stops working | when the token expires or you delete it | rarely (for example if your school moves its Canvas or your account changes) |
 
 How the feed is read:
@@ -66,7 +66,7 @@ How the feed is read:
 - `SUMMARY:Essay [ENG 101]` → title *Essay*, course *ENG 101*.
 - Times in UTC (`…Z`) are used as they are; `TZID=` times use that zone; times without a zone use the feed's `X-WR-TIMEZONE` or else yours. Canvas exports work due at 11:59 PM as an **all-day** entry, so an all-day assignment is due at **11:59 PM your time**; an all-day event starts at midnight.
 - Only entries from 28 days back to 21 days ahead are kept (as with the planner); an entry that disappears from the feed is marked gone. Cancelled entries are skipped. Repeating events count once.
-- The download is HTTPS only, from the public Canvas host the link names (re-checked before every sync, like the API), with no token, a 20-second timeout, at most 5 MB (counted after decompression) and redirects only within that host.
+- The download is HTTPS only, from the public Canvas host the link names (re-checked before every sync, like the API), with no token, a 20-second timeout, at most 5 MB (the bot unpacks gzip itself, so the limit holds while unpacking) and redirects only within that host. The feed is parsed in a worker thread with bounded nesting and text lengths, so a huge or hostile feed can't hold up anyone else's reminders; one entry that can't be read is skipped, not fatal.
 - If Canvas stops serving the link (401, 403, 404 or 410), you get one 📅 message asking for a fresh link, just like a rejected token.
 
 ## 2. When is something "done"?
@@ -192,10 +192,12 @@ Those are the defaults. Each person can choose their own rhythm in `/settings �
 | Setting | Choices | Default |
 |---|---|---|
 | Repeat | every 1, 2, 3 or 4 hours, or **no repeats** | 2 hours |
-| Counts as urgent | due within 12, 24 or 48 hours | 24 hours |
+| Start reminding | due within 12, 24 or 48 hours | 24 hours |
 | Morning list covers | the next 7, 14 or 21 days | 14 days |
 
 (The owner sets the defaults with `REMINDER_INTERVAL_MINUTES`, `REMINDER_WINDOW_HOURS` and `DIGEST_LOOKAHEAD_DAYS`; people who never open the menu follow them.)
+
+*Start reminding* only decides when the repeating reminders begin. The morning list's 🔴 URGENT group and the "anything urgent" part of `/today` always mean due within 24 hours. With **no repeats**, the one-off "🆕 Just posted and due soon" alert is only for work that wasn't on that morning's list.
 
 - **Changing the interval mid-cycle** restarts the cycle from its latest slot, so nothing is sent twice and nothing is skipped: the next reminder comes on the new spacing after the last one, or when it was already planned if that is sooner. A slot that was due at that moment but not sent yet still goes out once.
 - **No repeats** keeps the morning list and every one-off message below. The 🆕 alert then covers work posted after the morning list and due before the next one, once per item. A cycle that was open stays open quietly, so switching repeats back on continues the old rhythm instead of reminding again at once.
@@ -232,7 +234,7 @@ gantt
 
 | Message | When |
 |---|---|
-| 🆕 *Just posted and due soon* | New work that's due before the next reminder slot (it would otherwise be missed); with no repeats, before the next morning list. Not sent when a *Snooze over* message for the same item goes out |
+| 🆕 *Just posted and due soon* | New work that's due before the next reminder slot (it would otherwise be missed); with no repeats, work that wasn't on this morning's list and is due before the next one. Not sent when a *Snooze over* message for the same item goes out |
 | 🌙 *Due while you sleep* | 30 minutes before quiet hours start, if anything is due during them |
 | ⏰ *Snooze over* | When a 💤 snooze ends and the item is still open |
 | 📢 *New announcement* | Once per course announcement, when it's posted (after quiet hours or `/pause`). Posted overnight, it only appears in the morning list. Only an 🔗 Open button: there's nothing to submit |
