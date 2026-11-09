@@ -11,7 +11,7 @@ from canvas_tracker.domain.models import Settings
 from canvas_tracker.store.repo import Store
 
 if TYPE_CHECKING:
-    from canvas_tracker.runtime.sync import SyncService
+    from canvas_tracker.runtime.sync import SyncBase
 
 
 @dataclass
@@ -19,7 +19,7 @@ class BotDeps:
     store: Store
     settings: Settings
     clock: Callable[[], datetime]
-    sync: SyncService
+    sync: SyncBase
     hidden_courses: frozenset[str] = frozenset()
     # Records a manual /sync and returns how long to wait if it came too soon (else None).
     sync_wait: Callable[[], timedelta | None] = lambda: None

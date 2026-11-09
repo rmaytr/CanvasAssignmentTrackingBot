@@ -84,6 +84,8 @@ def _overdue(item: Item, salt: str, now: datetime, settings: Settings) -> Render
     )
     if item.lock_at is not None and item.lock_at > now:
         text += "\n" + copy.OVERDUE_STILL_ACCEPTED.format(until=format_due(item.lock_at, now, tz))
+    if settings.calendar_feed:
+        text += "\n" + copy.FEED_OVERDUE_NOTE
     row: list[Button] = []
     if item.db_id is not None:
         row += [
@@ -115,7 +117,8 @@ def render_send(
     if send.kind is SendKind.DIGEST:
         return render_digest(snap, now, settings, stale=stale)
     if send.kind is SendKind.AUTH_ALERT:
-        return [RenderedMessage(copy.AUTH_ALERT)]
+        text = copy.FEED_AUTH_ALERT if settings.calendar_feed else copy.AUTH_ALERT
+        return [RenderedMessage(text)]
     by_ref = {item.ref: item for item in snap.items}
     items = [by_ref[ref] for ref in send.item_refs if ref in by_ref and by_ref[ref].due_at]
     if not items:
@@ -129,8 +132,12 @@ def render_send(
         message = _overdue(items[0], snap.button_salt, now, settings)
         return [RenderedMessage(message.text + note, message.keyboard)]
     if send.kind is SendKind.REMINDER:
-        template = copy.REMINDER_HEADERS[_slot_number(send.key) % len(copy.REMINDER_HEADERS)]
+        # The calendar feed can't see submissions, so it never claims something isn't in.
+        headers = copy.FEED_REMINDER_HEADERS if settings.calendar_feed else copy.REMINDER_HEADERS
+        template = headers[_slot_number(send.key) % len(headers)]
         header = template.format(count=len(items), window=format_span(settings.reminder_window))
+    elif send.kind is SendKind.SNOOZE_END and settings.calendar_feed:
+        header = copy.FEED_SNOOZE_END_HEADER
     else:
         header = _HEADERS[send.kind]
     return _list_messages(header + note, items, snap, now, settings)

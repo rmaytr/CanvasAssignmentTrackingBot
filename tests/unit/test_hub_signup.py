@@ -171,6 +171,7 @@ async def test_settings_edits_rebuild_the_tenant(tmp_path: Path) -> None:
         "set:qh",
         "set:rem",
         "set:tok",
+        "set:feed",
         "set:url",
         "set:em",
     ]
@@ -253,7 +254,7 @@ async def test_owner_commands(tmp_path: Path) -> None:
     lines = listing.text.splitlines()
     assert lines[0] == "👥 Users (2 of 25)"
     assert lines[1].startswith("1. Owner (you) · school.instructure.com · ")
-    assert lines[2].startswith("2. Ben · school.instructure.com · ✓ synced")
+    assert lines[2].startswith("2. Ben · school.instructure.com · token · ✓ synced")
     assert texts(env.signup.users(friend)) == [copy.OWNER_ONLY]
 
     assert texts(await env.signup.remove(friend, "1")) == [copy.OWNER_ONLY]

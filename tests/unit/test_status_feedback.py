@@ -192,7 +192,7 @@ async def test_settings_shows_email_and_its_button_explains_email(tmp_path: Path
     [reply] = env.signup.settings(user)
     assert f"Email: {copy.EMAIL_OFF_LABEL}" in reply.text
     assert "Reminders: every 2 hours, for work due within 24 hours" in reply.text
-    assert ("set:em",) in [tuple(b.callback_data for b in row) for row in reply.keyboard]
+    assert "set:em" in [b.callback_data for row in reply.keyboard for b in row]
     assert [r.text for r in env.signup.begin_edit(user, "em")] == [copy.EMAIL_STATUS_OFF]
 
     await with_email(env, 1, "me@school.edu")

@@ -19,6 +19,7 @@ _PATTERNS = (
     re.compile(r"bot\d{6,12}:[A-Za-z0-9_-]{30,}"),  # Bot API URL segment
     re.compile(r"\b\d{6,12}:[A-Za-z0-9_-]{30,}\b"),  # Telegram bot token
     re.compile(r"\b\d{1,6}~[A-Za-z0-9]{20,}\b"),  # Canvas access token
+    re.compile(r"/feeds/calendars/[^\s\"'<>]+", re.IGNORECASE),  # Canvas calendar feed link
 )
 _STANDARD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None))) | {
     "message",

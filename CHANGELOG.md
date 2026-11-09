@@ -5,6 +5,8 @@ All notable changes to this project are documented here. The format follows [Kee
 ## [Unreleased]
 
 ### Added
+- **Calendar-feed mode: sign up without a Canvas token.** At the token step (and in `/settings → 📅 Calendar feed`) people can paste their private Canvas calendar feed link (Calendar → Calendar Feed) instead of making an access token, for schools that block tokens or people who'd rather not make one. The feed has no submission status, so in this mode work only counts as done when you tap ✅ Done; the morning list, reminders and overdue notices say so instead of "not submitted". Feed users get the same morning list, reminders, events and `/today`/`/week` views; grade weights aren't available, so ranking uses due dates and type. A link Canvas stops serving (401/403/404/410) gets the same one-time alert as a rejected token, telling the person to copy a fresh link. `/status`, `/settings` and the owner's `/users` show which mode each person uses. Switching between token and feed in `/settings` forgets the other secret once the new one works. Existing users stay on their token; nothing changes for them.
+- The feed is read with a small built-in iCalendar reader (no new dependency): UTC, `TZID` and all-day entries, folded lines and escapes. Assignments due at 11:59 PM, which Canvas exports as all-day entries, are due at 11:59 PM in the person's time zone.
 - **Optional email.** `/email you@school.edu` (confirmed with a 6-digit code sent to that address) adds an email copy of the morning list and one email 2 hours before each deadline. Assignments due at the same time share one email. Deadline emails wait out quiet hours and `/pause`, and are never sent after the deadline. `/email off` or `/disconnect` deletes the address. Telegram messages are unchanged.
 - Works with any SMTP provider (Brevo, Gmail, your own domain): `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, `EMAIL_FROM`, `EMAIL_FROM_NAME` in `.env`, with the password in `secrets/smtp_password.txt`. Email is off unless `SMTP_HOST` is set. See the hosting guide.
 
@@ -24,6 +26,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - **Announcements and events are no longer treated as homework.** A course announcement now gets one 📢 message when it's posted, a calendar event gets a 📅 heads-up an hour before it starts, and the morning list shows both under a new *Announcements & events* section. Neither is ever reminded, ranked or reported as overdue.
 
 ### Fixed
+- All-day calendar events (Canvas gives them at midnight) no longer get a "📅 Event at 12:00 AM (in 1 hour)" heads-up at 11 PM the night before; the morning list shows them as "all day".
 - The sign-up welcome, the "All set" message and `/start` always said "every 2 hours … within 24 hours", whatever the bot was configured with; they now show the person's actual rhythm. The ⏰ reminder header also names the person's window instead of always "24 hours".
 - When a 💤 snooze ended shortly before the deadline, the item could get a "Snooze over" message and a "Just posted and due soon" alert in the same minute. Now only the first is sent.
 - After `/disconnect` and signing up again, a ✅/💤/🔕 button on an old message could act on a different item in the new account (item numbers start again at 1). Buttons now carry a random code tied to the user's database, and old ones answer "This button is from before you reconnected". Buttons sent before this update keep working for existing users.
@@ -32,6 +35,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - Course announcements (and posts like "Attend the social this Thursday!") were reminded about and reported as ❗ overdue, because Canvas's `announcement` items were treated as assignments.
 
 ### Security
+- A calendar feed link is a secret like a token: it is stored Fernet-encrypted, deleted from the chat wherever it's pasted (also in `/feedback`), redacted from the logs, and only ever fetched over HTTPS from the public Canvas host it names (re-checked before every sync), with a 5 MB limit (counted after decompression), a timeout, and redirects allowed only within that host.
 - At most 5 Canvas token checks per user per 15 minutes (sign-up and `/settings`), then a friendly "wait N min"; `/sync` at most once a minute per user.
 - The "Canvas host resolves only to public addresses" check now also runs before every sync and token check (cached for 5 minutes), not just at sign-up, so a host that is later re-pointed at a private address (DNS rebinding) is refused.
 - Email addresses are stored Fernet-encrypted like Canvas tokens, and only after confirmation. Codes are stored hashed, expire after 15 minutes, lock after 5 wrong tries, and can be requested at most once a minute. SMTP errors are logged by class name only.

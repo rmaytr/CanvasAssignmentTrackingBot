@@ -9,7 +9,8 @@ an overnight post doesn't arrive twice.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 from canvas_tracker.domain.models import (
     ANNOUNCEMENT_FRESH,
@@ -23,6 +24,16 @@ from canvas_tracker.domain.models import (
 )
 from canvas_tracker.planning.keys import announcement_key, event_soon_key
 from canvas_tracker.planning.timeutil import at_local, in_quiet, local_date, quiet_ends_at
+
+
+def is_all_day(item: Item, zone: ZoneInfo) -> bool:
+    """An event at local midnight: how Canvas (planner and calendar feed) gives all-day
+    events. They are in the morning list; an "in 1 hour" heads-up at 11 PM would be noise."""
+    return (
+        item.type is ItemType.EVENT
+        and item.due_at is not None
+        and item.due_at.astimezone(zone).time() == time(0, 0)
+    )
 
 
 def _by_date(items: list[Item]) -> list[Item]:
@@ -53,6 +64,8 @@ def plan_news(now: datetime, snap: Snapshot, settings: Settings) -> tuple[Send, 
         if key not in snap.sent_keys and not in_digest:
             sends.append(Send(key, SendKind.ANNOUNCEMENT, (item.ref,)))
     for item in _by_date([i for i in snap.items if i.type is ItemType.EVENT]):
+        if is_all_day(item, zone):
+            continue
         start = item.due_at
         if item.gone_at is None and start is not None and start - EVENT_LEAD <= now < start:
             key = event_soon_key(item)
@@ -70,6 +83,8 @@ def next_event_heads_up(now: datetime, snap: Snapshot, settings: Settings) -> da
     for item in snap.items:
         start = item.due_at
         if item.type is not ItemType.EVENT or item.gone_at is not None or start is None:
+            continue
+        if is_all_day(item, settings.zone):
             continue
         if start <= now or event_soon_key(item) in snap.sent_keys:
             continue

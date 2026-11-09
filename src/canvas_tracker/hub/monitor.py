@@ -50,6 +50,7 @@ _REASONS = {
     "CanvasHostRefused": copy.MONITOR_REASON_HOST,
     "CanvasUnavailable": copy.MONITOR_REASON_UNREACHABLE,
     "CanvasProtocolError": copy.MONITOR_REASON_PROTOCOL,
+    "FeedTooLarge": copy.MONITOR_REASON_FEED_TOO_LARGE,
 }
 
 

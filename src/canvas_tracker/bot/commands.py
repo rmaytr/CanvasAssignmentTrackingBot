@@ -99,6 +99,8 @@ def sync_cmd(deps: BotDeps) -> Handler:
             await _reply_text(update, copy.SYNC_OK.format(count=count))
         elif outcome is SyncOutcome.NOT_MODIFIED:
             await _reply_text(update, copy.SYNC_NOT_MODIFIED)
+        elif outcome is SyncOutcome.AUTH_FAILED and deps.settings.calendar_feed:
+            await _reply_text(update, copy.SYNC_FAILED_FEED_AUTH)
         else:
             await _reply_text(update, copy.SYNC_FAILED[outcome])
 

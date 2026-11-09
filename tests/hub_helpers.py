@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, NamedTuple
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -19,12 +20,37 @@ from canvas_tracker.notify.base import FakeNotifier, NotifyError
 from canvas_tracker.render import copy
 from canvas_tracker.render.message import RenderedMessage
 from canvas_tracker.sources.canvas_client import CanvasClient
+from canvas_tracker.sources.feed import FeedClient
 from tests.factories import NOW
 
 GOOD_TOKEN = "4242~GOODgoodGOODgoodGOODgood0000"
 OTHER_TOKEN = "4243~OTHERotherOTHERotherOTHER000"
 BAD_TOKEN = "4242~BADbadBADbadBADbadBADbad000"
 NO_PLANNER_TOKEN = "4242~NOPLANnoplanNOPLANnoplan000"
+FEED_PATH = "/feeds/calendars/user_TESTfeedLINKabc123def456.ics"
+FEED_URL = f"https://school.instructure.com{FEED_PATH}"
+OTHER_FEED_URL = "https://school.instructure.com/feeds/calendars/user_OTHERfeedLINK987zyx.ics"
+
+
+def ics(*events: str, zone: str | None = "America/Chicago") -> bytes:
+    """A small calendar feed; each event is the lines between BEGIN/END:VEVENT."""
+    head = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//test//EN"]
+    if zone:
+        head.append(f"X-WR-TIMEZONE:{zone}")
+    body = [f"BEGIN:VEVENT\r\n{e}\r\nEND:VEVENT" for e in events]
+    return ("\r\n".join([*head, *body, "END:VCALENDAR"]) + "\r\n").encode()
+
+
+def feed_assignment(assignment_id: int, due: str, title: str = "Essay [ENG 101]") -> str:
+    return "\r\n".join(
+        [
+            f"DTSTART:{due}",
+            f"SUMMARY:{title}",
+            f"UID:event-assignment-{assignment_id}",
+            "URL;VALUE=URI:https://school.instructure.com/calendar?"
+            f"assignment_id={assignment_id}&include_contexts=course_42",
+        ]
+    )
 
 
 class DiskReading(NamedTuple):
@@ -64,8 +90,21 @@ class FakeCanvas:
     time_zone: str | None = "America/Chicago"
     calls: list[tuple[str, str]] = field(default_factory=list)
     echo_401: bool = False  # answer everything with a 401 that echoes the token back
+    # Calendar feeds by path; a path that isn't here answers 404 (an unknown link).
+    feeds: dict[str, bytes] = field(default_factory=dict)
+    feed_status: int = 200
 
     def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/feeds/calendars/"):
+            self.calls.append(("", request.url.path))
+            if "Authorization" in request.headers:
+                return httpx.Response(400, text="a feed request must not carry a token")
+            body = self.feeds.get(request.url.path)
+            if body is None:
+                return httpx.Response(404, text="not found")
+            if self.feed_status != 200:
+                return httpx.Response(self.feed_status, text="nope")
+            return httpx.Response(200, content=body, headers={"Content-Type": "text/calendar"})
         token = request.headers.get("Authorization", "").removeprefix("Bearer ")
         self.calls.append((token, request.url.path))
         if self.echo_401:
@@ -149,6 +188,18 @@ def build_hub(
             max_retries=0,
         )
 
+    def feed_client_factory(base: str, url: Callable[[], str]) -> FeedClient:
+        async def no_sleep(_s: float) -> None:
+            return None
+
+        return FeedClient(
+            url,
+            host=httpx.URL(base).host,
+            transport=httpx.MockTransport(canvas.handler),
+            sleep=no_sleep,
+            max_retries=0,
+        )
+
     async def host_check(host: str) -> bool:
         return public(host)
 
@@ -169,6 +220,7 @@ def build_hub(
         pairing=pairing,
         mailer_factory=outbox.mailer if email else None,
         disk_usage=disk,
+        feed_client_factory=feed_client_factory,
     )
     return HubEnv(hub, Signup(hub), canvas, clock, notifiers, tmp_path, key, outbox, disk)
 
@@ -180,11 +232,15 @@ async def sign_up(
     token: str = GOOD_TOKEN,
     name: str = "Friend",
     url: str = "school.instructure.com",
+    feed: str | None = None,
 ) -> None:
-    """Walk a user through every sign-up step (an invite for non-owners)."""
+    """Walk a user through every sign-up step (an invite for non-owners). With ``feed``,
+    the calendar feed link is pasted instead of a token."""
     arg = None if telegram_id == env.hub.owner_id() else env.hub.registry.create_invite(NOW)
     await env.signup.start(telegram_id, name, arg)
-    for answer in (url, token):
+    if feed is not None and urlsplit(feed).path not in env.canvas.feeds:
+        env.canvas.feeds[urlsplit(feed).path] = ics()
+    for answer in (url, token if feed is None else feed):
         user = env.hub.registry.get_user(telegram_id)
         assert user is not None
         await env.signup.text(user, answer)

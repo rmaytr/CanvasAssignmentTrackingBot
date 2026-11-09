@@ -35,6 +35,9 @@ LAST_ENRICHMENT_AT = "last_enrichment_at"
 LAST_PURGE_AT = "last_purge_at"
 BUTTON_SALT = "button_salt"
 BUTTONS_UNSALTED_OK = "buttons_unsalted_ok"
+FEED_ETAG = "feed_etag"
+FEED_LAST_MODIFIED = "feed_last_modified"
+SOURCE_MODE = "source_mode"  # how this user's Canvas is read: "token" (default) or "feed"
 
 CLAIM_STALE_AFTER = timedelta(minutes=2)
 _TS_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -454,6 +457,15 @@ class Store:
             auth_failed_since=self.get_time(AUTH_FAILED_SINCE),
             button_salt=self.button_salt(),
         )
+
+    def use_source(self, mode: str) -> None:
+        """Note how Canvas is read for this user. After a switch the old source's cached
+        validators are dropped, so the next sync downloads everything afresh."""
+        if (self.get_state(SOURCE_MODE) or "token") == mode:
+            return
+        for key in (PLANNER_ETAG, FEED_ETAG, FEED_LAST_MODIFIED):
+            self.set_state(key, None)
+        self.set_state(SOURCE_MODE, mode)
 
     def button_salt(self) -> str:
         """This database's random button salt (set by migration 0003)."""

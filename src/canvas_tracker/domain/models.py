@@ -154,6 +154,7 @@ class Settings:
     overdue_reminder_max: timedelta = timedelta(hours=48)
     canvas_host: str = ""
     email: bool = False  # a verified address and a configured mail server
+    calendar_feed: bool = False  # read from the calendar feed: no submission status
 
     def __post_init__(self) -> None:
         try:

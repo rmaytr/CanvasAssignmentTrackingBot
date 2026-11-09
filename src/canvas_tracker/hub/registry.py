@@ -19,6 +19,7 @@ OWNER_KEY = "owner_telegram_id"
 HUB_LAST_TICK_AT = "last_tick_at"
 
 Status = Literal["onboarding", "active"]
+Mode = Literal["token", "feed"]
 _UPDATABLE = frozenset(
     {
         "status",
@@ -41,6 +42,8 @@ _UPDATABLE = frozenset(
         "reminder_interval_minutes",
         "reminder_window_hours",
         "digest_lookahead_days",
+        "mode",
+        "feed_sealed",
     }
 )
 
@@ -71,6 +74,14 @@ class User:
     reminder_interval_minutes: int | None = None
     reminder_window_hours: int | None = None
     digest_lookahead_days: int | None = None
+    # How Canvas is read: "token" (the access token in token_sealed) or "feed" (the
+    # calendar feed link in feed_sealed, which has no submission status).
+    mode: Mode = "token"
+    feed_sealed: bytes | None = None
+
+    @property
+    def feed_mode(self) -> bool:
+        return self.mode == "feed"
 
 
 def _user(row: sqlite3.Row) -> User:
@@ -100,6 +111,8 @@ def _user(row: sqlite3.Row) -> User:
         reminder_interval_minutes=row["reminder_interval_minutes"],
         reminder_window_hours=row["reminder_window_hours"],
         digest_lookahead_days=row["digest_lookahead_days"],
+        mode="feed" if row["mode"] == "feed" else "token",
+        feed_sealed=row["feed_sealed"],
     )
 
 

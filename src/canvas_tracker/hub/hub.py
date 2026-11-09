@@ -21,9 +21,17 @@ from canvas_tracker.hub.parsing import is_public_address
 from canvas_tracker.hub.ratelimit import RateLimiter
 from canvas_tracker.hub.registry import HUB_LAST_TICK_AT, OWNER_KEY, Registry, User
 from canvas_tracker.hub.secretbox import SecretBox
-from canvas_tracker.hub.tenant import ClientFactory, MailerFactory, Tenant, user_db_path
+from canvas_tracker.hub.tenant import (
+    ClientFactory,
+    FeedClientFactory,
+    MailerFactory,
+    Tenant,
+    default_feed_client,
+    user_db_path,
+)
 from canvas_tracker.notify.base import Notifier, NotifyError
 from canvas_tracker.render.message import RenderedMessage
+from canvas_tracker.runtime.logging import register_secret
 from canvas_tracker.runtime.loop import next_tick_delay
 from canvas_tracker.sources.canvas_client import (
     CanvasAuthError,
@@ -31,6 +39,7 @@ from canvas_tracker.sources.canvas_client import (
     CanvasProtocolError,
     CanvasUnavailable,
 )
+from canvas_tracker.sources.ical import parse_calendar
 from canvas_tracker.sources.planner import PLANNER_PATH
 from canvas_tracker.store.repo import AUTH_FAILED_SINCE, LAST_SUCCESSFUL_SYNC_AT, LAST_SYNC_ERROR
 
@@ -45,7 +54,7 @@ MANUAL_SYNC_WINDOW = timedelta(minutes=1)
 FEEDBACK_PER_WINDOW = 5
 FEEDBACK_WINDOW = timedelta(hours=1)
 MONITOR_TIMEOUT_S = 30.0
-Problem = Literal["rejected", "unreachable", "not_canvas", "no_planner"]
+Problem = Literal["rejected", "unreachable", "not_canvas", "no_planner", "not_feed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,8 +136,10 @@ class Hub:
         pairing: PairingCode | None = None,
         mailer_factory: MailerFactory | None = None,
         disk_usage: DiskCheck = shutil.disk_usage,
+        feed_client_factory: FeedClientFactory = default_feed_client,
     ) -> None:
         self.registry = registry
+        self.feed_client_factory = feed_client_factory
         self.box = box
         self.data_dir = data_dir
         self.shared = shared
@@ -194,6 +205,7 @@ class Hub:
             host_check=host_ok,
             sync_wait=sync_wait,
             on_send=self.monitor.record_send,
+            feed_client_factory=self.feed_client_factory,
         )
 
     def load(self) -> list[int]:
@@ -203,8 +215,9 @@ class Hub:
         broken: list[int] = []
         for user in self.registry.active_users():
             try:
-                if user.token_sealed is not None:
-                    self.box.open(user.token_sealed)
+                sealed = user.feed_sealed if user.feed_mode else user.token_sealed
+                if sealed is not None:
+                    self.box.open(sealed)
                 self.tenants[user.telegram_id] = self._build(user)
             except ValueError:
                 broken.append(user.telegram_id)
@@ -388,3 +401,30 @@ class Hub:
             return Verification("unreachable")
         finally:
             await client.aclose()
+
+    async def verify_feed(self, url: str) -> Verification:
+        """Check a calendar feed link: its host is public, Canvas serves it, and it is an
+        iCalendar. The feed's own time zone (when it names one) is kept as a suggestion."""
+        register_secret(url)
+        base = f"https://{urlsplit(url).hostname or ''}"
+        if not await self.host_guard(urlsplit(url).hostname or ""):
+            return Verification("unreachable")
+        client = self.feed_client_factory(base, lambda: url)
+        try:
+            async with asyncio.timeout(VERIFY_TIMEOUT_S):
+                response = await client.fetch()
+        except TimeoutError:
+            return Verification("unreachable")
+        except CanvasAuthError:
+            return Verification("rejected")
+        except CanvasUnavailable:
+            return Verification("unreachable")
+        except CanvasProtocolError:
+            return Verification("not_feed")
+        finally:
+            await client.aclose()
+        try:
+            calendar = parse_calendar(response.body, ZoneInfo("UTC"))
+        except ValueError:
+            return Verification("not_feed")
+        return Verification(None, _zone(calendar.time_zone))

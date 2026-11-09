@@ -23,8 +23,9 @@ from canvas_tracker.hub.secretbox import SecretBox
 from canvas_tracker.notify.base import Notifier
 from canvas_tracker.runtime.logging import register_secret
 from canvas_tracker.runtime.loop import Runtime
-from canvas_tracker.runtime.sync import SyncService
+from canvas_tracker.runtime.sync import FeedSync, SyncBase, SyncService
 from canvas_tracker.sources.canvas_client import CanvasClient
+from canvas_tracker.sources.feed import FeedClient
 from canvas_tracker.store.db import connect, migrate
 from canvas_tracker.store.repo import Store
 
@@ -33,6 +34,7 @@ log = logging.getLogger(__name__)
 DEFAULT_DIGEST = time(8, 0)
 DIGEST_GRACE = timedelta(hours=4)
 ClientFactory = Callable[[str, Callable[[], str]], CanvasClient]
+FeedClientFactory = Callable[[str, Callable[[], str]], FeedClient]  # (Canvas base, feed link)
 MailerFactory = Callable[[Callable[[], str | None]], Notifier]
 
 
@@ -80,12 +82,17 @@ def user_settings(user: User, shared: Mapping[str, object], *, email: bool = Fal
         quiet_end=end,
         canvas_host=urlsplit(user.canvas_base_url).hostname or "",
         email=email,
+        calendar_feed=user.feed_mode,
         **values,  # type: ignore[arg-type]
     )
 
 
 def user_db_path(data_dir: Path, telegram_id: int) -> Path:
     return data_dir / "users" / f"{telegram_id}.db"
+
+
+def default_feed_client(base_url: str, url: Callable[[], str]) -> FeedClient:
+    return FeedClient(url, host=urlsplit(base_url).hostname)
 
 
 class Tenant:
@@ -105,6 +112,7 @@ class Tenant:
         host_check: Callable[[], Awaitable[bool]] | None = None,
         sync_wait: Callable[[], timedelta | None] | None = None,
         on_send: Callable[[SendKind, bool], None] | None = None,
+        feed_client_factory: FeedClientFactory = default_feed_client,
     ) -> None:
         assert user.canvas_base_url is not None  # noqa: S101 - only active users get a tenant
         self.telegram_id = user.telegram_id
@@ -113,6 +121,7 @@ class Tenant:
         conn = connect(path)
         migrate(conn)
         self.store = Store(conn)
+        self.store.use_source(user.mode)
         default_interval = bot_defaults(shared).reminder_interval
         if default_interval is not None:  # cycles from before intervals were per user
             self.store.fill_cycle_interval(default_interval)
@@ -131,21 +140,42 @@ class Tenant:
 
         mailer = mailer_factory(address) if email and mailer_factory is not None else None
 
-        def token() -> str:
-            current = registry.get_user(telegram_id)
-            if current is None or current.token_sealed is None:
-                raise OSError("no token stored")  # the client reports this as an auth error
-            try:
-                secret = box.open(current.token_sealed)
-            except ValueError:
-                raise OSError("token can't be decrypted") from None
-            register_secret(secret)
-            return secret
+        def secret(field: str) -> Callable[[], str]:
+            """Reads the user's token or feed link from the registry each time it's needed,
+            so a replaced one is used at once and it isn't kept decrypted in memory."""
 
-        self.client = client_factory(user.canvas_base_url, token)
-        self.sync = SyncService(
-            self.client, self.store, user.canvas_base_url, host_check=host_check
-        )
+            def read() -> str:
+                current = registry.get_user(telegram_id)
+                sealed = None if current is None else getattr(current, field)
+                if sealed is None:
+                    raise OSError("nothing stored")  # the clients report this as an auth error
+                try:
+                    value = box.open(sealed)
+                except ValueError:
+                    raise OSError("can't be decrypted") from None
+                register_secret(value)
+                return value
+
+            return read
+
+        self.client: CanvasClient | FeedClient
+        self.sync: SyncBase
+        if user.feed_mode:
+            token = secret("feed_sealed")  # a new link counts as a new "token" for rechecks
+            self.client = feed_client_factory(user.canvas_base_url, token)
+            self.sync = FeedSync(
+                self.client,
+                self.store,
+                user.canvas_base_url,
+                zone=self.settings.zone,
+                host_check=host_check,
+            )
+        else:
+            token = secret("token_sealed")
+            self.client = client_factory(user.canvas_base_url, token)
+            self.sync = SyncService(
+                self.client, self.store, user.canvas_base_url, host_check=host_check
+            )
         self.runtime = Runtime(
             store=self.store,
             sync=self.sync,

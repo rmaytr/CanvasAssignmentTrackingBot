@@ -9,7 +9,7 @@ from canvas_tracker.domain.models import Item, ItemType, Settings, Snapshot
 from canvas_tracker.domain.priority import Score, Tier, score
 from canvas_tracker.domain.status import REMINDABLE_TYPES, is_overdue_accepting
 from canvas_tracker.planning.keys import announcement_key
-from canvas_tracker.planning.news import is_fresh_announcement
+from canvas_tracker.planning.news import is_all_day, is_fresh_announcement
 from canvas_tracker.render import copy
 from canvas_tracker.render.format import clock, format_due, split_blocks
 from canvas_tracker.render.items import default_stale, heading, plain_heading, stale_banner
@@ -180,11 +180,8 @@ def render_digest(
         blocks += ["", copy.SECTION_NEWS]
         for item in events:
             assert item.due_at is not None  # noqa: S101
-            blocks.append(
-                copy.NEWS_EVENT_LINE.format(
-                    time=clock(item.due_at, tz), heading=heading(item, snap, host)
-                )
-            )
+            when = copy.ALL_DAY if is_all_day(item, tz) else clock(item.due_at, tz)
+            blocks.append(copy.NEWS_EVENT_LINE.format(time=when, heading=heading(item, snap, host)))
         for item in announcements:
             assert item.due_at is not None  # noqa: S101
             blocks.append(
@@ -192,6 +189,8 @@ def render_digest(
                     heading=heading(item, snap, host), when=format_due(item.due_at, now, tz)
                 )
             )
+    if settings.calendar_feed and (urgent or high or rest or overdue):
+        blocks += ["", copy.FEED_DIGEST_NOTE]
     if done_yesterday:
         blocks += ["", copy.DONE_YESTERDAY.format(count=done_yesterday)]
     if fresh and not (urgent or high or rest or overdue or events or announcements):

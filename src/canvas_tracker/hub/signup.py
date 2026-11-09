@@ -22,8 +22,10 @@ from canvas_tracker.hub.hub import Hub
 from canvas_tracker.hub.monitor import HealthReport, disk_label
 from canvas_tracker.hub.parsing import (
     contains_canvas_token,
+    contains_feed_url,
     looks_like_token,
     normalize_canvas_url,
+    normalize_feed_url,
     parse_clock,
     parse_quiet,
     quiet_window,
@@ -42,6 +44,8 @@ log = logging.getLogger(__name__)
 
 Keyboard = tuple[tuple[Button, ...], ...]
 TOKEN_STEPS = frozenset({"token", "edit_token"})
+FEED_STEPS = frozenset({"feed", "edit_feed"})
+SECRET_STEPS = TOKEN_STEPS | FEED_STEPS  # what's typed at these steps never stays in the chat
 URL_STEPS = frozenset({"url", "edit_url"})
 FEEDBACK_MAX_CHARS = 3000  # leaves room for the header within Telegram's 4096
 LATEST_DIGEST = time(20, 0)  # leaves a 4 h same-day window for a late morning list
@@ -133,8 +137,8 @@ def settings_keyboard() -> Keyboard:
     return (
         (Button(copy.BTN_SET_TZ, "set:tz"), Button(copy.BTN_SET_DIGEST, "set:dt")),
         (Button(copy.BTN_SET_QUIET, "set:qh"), Button(copy.BTN_SET_REMINDERS, "set:rem")),
-        (Button(copy.BTN_SET_TOKEN, "set:tok"), Button(copy.BTN_SET_URL, "set:url")),
-        (Button(copy.BTN_SET_EMAIL, "set:em"),),
+        (Button(copy.BTN_SET_TOKEN, "set:tok"), Button(copy.BTN_SET_FEED, "set:feed")),
+        (Button(copy.BTN_SET_URL, "set:url"), Button(copy.BTN_SET_EMAIL, "set:em")),
     )
 
 
@@ -221,13 +225,32 @@ class Signup:
     def _token_prompt(self, user: User, edit: bool) -> Reply:
         new_site = edit and user.pending_base_url is not None
         base = (user.pending_base_url if new_site else user.canvas_base_url) or ""
-        link = Button(copy.BTN_OPEN_SETTINGS, url=f"{base}/profile/settings")
-        text = (
-            copy.ASK_TOKEN_NEW_SITE
-            if new_site
-            else (copy.ASK_TOKEN_EDIT if edit else copy.ASK_TOKEN)
-        )
-        return Reply(text, ((link,),) if base else ())
+        if new_site:
+            text = copy.ASK_TOKEN_NEW_SITE
+        elif edit:
+            text = copy.ASK_TOKEN_SWITCH if user.feed_mode else copy.ASK_TOKEN_EDIT
+        else:
+            text = copy.ASK_TOKEN
+        rows: list[tuple[Button, ...]] = []
+        if base:
+            rows.append((Button(copy.BTN_OPEN_SETTINGS, url=f"{base}/profile/settings"),))
+        rows.append((Button(copy.BTN_USE_FEED, "su:mode:feed"),))
+        return Reply(text, tuple(rows))
+
+    def _feed_prompt(self, user: User, edit: bool) -> Reply:
+        new_site = edit and user.pending_base_url is not None
+        base = (user.pending_base_url if new_site else user.canvas_base_url) or ""
+        if new_site:
+            text = copy.ASK_FEED_NEW_SITE
+        elif edit:
+            text = copy.ASK_FEED_EDIT if user.feed_mode else copy.ASK_FEED_SWITCH
+        else:
+            text = copy.ASK_FEED
+        rows: list[tuple[Button, ...]] = []
+        if base:
+            rows.append((Button(copy.BTN_OPEN_CALENDAR, url=f"{base}/calendar"),))
+        rows.append((Button(copy.BTN_USE_TOKEN, "su:mode:token"),))
+        return Reply(text, tuple(rows))
 
     def prompt(self, user: User) -> list[Reply]:
         """Ask again for whatever the user's current step needs."""
@@ -238,6 +261,8 @@ class Signup:
             return [Reply(copy.ASK_URL_EDIT)]
         if step in TOKEN_STEPS:
             return [self._token_prompt(user, edit=step == "edit_token")]
+        if step in FEED_STEPS:
+            return [self._feed_prompt(user, edit=step == "edit_feed")]
         if step in _KIND_STEPS["tz"]:
             text = copy.ASK_TZ if step == "tz" else copy.ASK_TZ_EDIT
             return [Reply(text, tz_keyboard(user.suggested_tz))]
@@ -326,10 +351,16 @@ class Signup:
         step = user.step
         if step is None:
             return [Reply(copy.HELP)]
+        if contains_feed_url(text) and step in URL_STEPS | SECRET_STEPS:
+            return await self._feed(user, text)  # a feed link names its Canvas site too
         if step in URL_STEPS:
             return await self._url(user, text)
         if step in TOKEN_STEPS:
             return await self._token(user, text)
+        if step in FEED_STEPS:
+            if contains_canvas_token(text):  # a token pasted here after all: just use it
+                return await self._token(user, text)
+            return [Reply(copy.FEED_INVALID)]
         if step in _KIND_STEPS["tz"]:
             return await self._tz(user, resolve_timezone(text))
         if step in _KIND_STEPS["dt"]:
@@ -343,6 +374,8 @@ class Signup:
         self._seen(user)
         if kind in _RHYTHM_FIELDS:
             return await self._rhythm(user, kind, value)
+        if kind == "mode":
+            return self._switch_method(user, value)
         if kind not in _KIND_STEPS or user.step not in _KIND_STEPS[kind]:
             return self.prompt(user)
         if kind == "tz":
@@ -351,16 +384,30 @@ class Signup:
             return await self._digest(user, parse_clock(value))
         return await self._quiet(user, parse_quiet(value))
 
+    def _switch_method(self, user: User, value: str) -> list[Reply]:
+        """🔑/📅 at the token or feed step: ask for the other kind of secret instead."""
+        if user.step not in SECRET_STEPS or value not in ("token", "feed"):
+            return self.prompt(user)
+        editing = user.step in ("edit_token", "edit_feed")
+        step = f"edit_{value}" if editing else value
+        self.registry.update_user(user.telegram_id, step=step)
+        updated = self.registry.get_user(user.telegram_id)
+        assert updated is not None  # noqa: S101
+        return self.prompt(updated)
+
     async def _url(self, user: User, text: str) -> list[Reply]:
         base = normalize_canvas_url(text)
         if base is None:
             return [Reply(copy.URL_INVALID)]
         if not await self.hub.host_guard(urlsplit(base).hostname or ""):
             return [Reply(copy.URL_UNREACHABLE)]
-        if user.step == "edit_url":  # switch only once a token for the new site works
-            self.registry.update_user(user.telegram_id, pending_base_url=base, step="edit_token")
+        if user.step == "edit_url":  # switch only once a token (or feed) for the new site works
+            step = "edit_feed" if user.feed_mode else "edit_token"
+            self.registry.update_user(user.telegram_id, pending_base_url=base, step=step)
             updated = self.registry.get_user(user.telegram_id)
             assert updated is not None  # noqa: S101
+            if user.feed_mode:
+                return [self._feed_prompt(updated, edit=True)]
             return [self._token_prompt(updated, edit=True)]
         self.registry.update_user(user.telegram_id, canvas_base_url=base, step="token")
         updated = self.registry.get_user(user.telegram_id)
@@ -374,7 +421,7 @@ class Signup:
         token = text.strip()
         if not looks_like_token(token):
             return [Reply(copy.TOKEN_FORMAT)]
-        editing = user.step == "edit_token"
+        editing = user.step in ("edit_token", "edit_feed")
         base = (user.pending_base_url if editing else None) or user.canvas_base_url
         wait = self.hub.token_limiter.hit(user.telegram_id, self.hub.clock())
         if wait is not None:
@@ -386,10 +433,12 @@ class Signup:
             fix = copy.FIX_ADDRESS_SETTINGS if editing else copy.FIX_ADDRESS_SIGNUP
             return [Reply(copy.TOKEN_PROBLEMS[result.problem].format(host=host, fix=fix))]
         sealed = self.hub.box.seal(token)
-        if editing:
+        if editing:  # a feed link, if there was one, is forgotten once the token works
             self.registry.update_user(
                 user.telegram_id,
                 token_sealed=sealed,
+                mode="token",
+                feed_sealed=None,
                 canvas_base_url=base,
                 pending_base_url=None,
                 step=None,
@@ -397,12 +446,57 @@ class Signup:
             await self._refresh(user.telegram_id)
             return [Reply(copy.TOKEN_SAVED)]
         self.registry.update_user(
-            user.telegram_id, token_sealed=sealed, suggested_tz=result.time_zone, step="tz"
+            user.telegram_id,
+            token_sealed=sealed,
+            mode="token",
+            feed_sealed=None,
+            suggested_tz=result.time_zone,
+            step="tz",
         )
         return [
             Reply(copy.TOKEN_SAVED),
             Reply(copy.ASK_TZ, tz_keyboard(result.time_zone)),
         ]
+
+    async def _feed(self, user: User, text: str) -> list[Reply]:
+        """A pasted calendar feed link: checked with Canvas, then stored encrypted. The
+        link names its own Canvas site, which replaces the address typed before."""
+        url = normalize_feed_url(text)
+        if url is None:
+            return [Reply(copy.FEED_INVALID)]
+        wait = self.hub.token_limiter.hit(user.telegram_id, self.hub.clock())
+        if wait is not None:
+            minutes = max(1, math.ceil(wait.total_seconds() / 60))
+            return [Reply(copy.FEED_TOO_MANY.format(minutes=minutes))]
+        result = await self.hub.verify_feed(url)
+        host = urlsplit(url).hostname or ""
+        if result.problem is not None:
+            problem = result.problem if result.problem in copy.FEED_PROBLEMS else "not_feed"
+            return [Reply(copy.FEED_PROBLEMS[problem].format(host=host))]
+        sealed = self.hub.box.seal(url)
+        base = f"https://{host}"
+        if user.status == "active":  # the token, if there was one, is forgotten
+            self.registry.update_user(
+                user.telegram_id,
+                feed_sealed=sealed,
+                mode="feed",
+                token_sealed=None,
+                canvas_base_url=base,
+                pending_base_url=None,
+                step=None,
+            )
+            await self._refresh(user.telegram_id)
+            return [Reply(copy.FEED_SAVED)]
+        self.registry.update_user(
+            user.telegram_id,
+            feed_sealed=sealed,
+            mode="feed",
+            token_sealed=None,
+            canvas_base_url=base,
+            suggested_tz=result.time_zone,
+            step="tz",
+        )
+        return [Reply(copy.FEED_SAVED), Reply(copy.ASK_TZ, tz_keyboard(result.time_zone))]
 
     async def _tz(self, user: User, zone: str | None) -> list[Reply]:
         if zone is None:
@@ -453,6 +547,8 @@ class Signup:
             rhythm=rhythm_sentence(self._effective(done)),
             quiet=fmt_quiet(value),
         )
+        if done.feed_mode:
+            text = f"{text}\n\n{copy.FEED_ALL_SET}"
         return [Reply(text)]
 
     async def _rhythm(self, user: User, kind: str, value: str) -> list[Reply]:
@@ -488,6 +584,7 @@ class Signup:
         effective = self._effective(user)
         text = copy.SETTINGS.format(
             host=urlsplit(user.canvas_base_url or "").hostname or "?",
+            connection=copy.CONNECTION_FEED if user.feed_mode else copy.CONNECTION_TOKEN,
             tz=user.tz,
             digest=fmt_time(user.digest_time or time(8, 0)),
             quiet=fmt_quiet(user.quiet),
@@ -510,6 +607,7 @@ class Signup:
             "dt": "edit_digest",
             "qh": "edit_quiet",
             "tok": "edit_token",
+            "feed": "edit_feed",
             "url": "edit_url",
         }
         if user.status == "active" and what in ("rem", "em"):
@@ -559,6 +657,8 @@ class Signup:
             return [Reply(copy.FEEDBACK_USAGE)]
         if contains_canvas_token(body):
             return [Reply(copy.FEEDBACK_HAS_TOKEN)]
+        if contains_feed_url(body):
+            return [Reply(copy.FEEDBACK_HAS_FEED)]
         if len(body) > FEEDBACK_MAX_CHARS:
             return [Reply(copy.FEEDBACK_TOO_LONG.format(limit=FEEDBACK_MAX_CHARS))]
         if self.is_owner(user) or user.is_owner:
@@ -611,7 +711,10 @@ class Signup:
                 failed = tenant.store.get_time(AUTH_FAILED_SINCE)
                 synced = tenant.store.get_time(LAST_SUCCESSFUL_SYNC_AT)
                 if failed is not None:
-                    state = copy.USERS_STATE_AUTH.format(when=format_due(failed, now, zone))
+                    rejected = (
+                        copy.USERS_STATE_FEED_REJECTED if other.feed_mode else copy.USERS_STATE_AUTH
+                    )
+                    state = rejected.format(when=format_due(failed, now, zone))
                 elif synced is not None:
                     state = copy.USERS_STATE_OK.format(when=format_due(synced, now, zone))
                 else:
@@ -622,6 +725,7 @@ class Signup:
                     name=other.display_name or "?",
                     you=copy.USERS_YOU if other.telegram_id == user.telegram_id else "",
                     host=urlsplit(other.canvas_base_url or "").hostname or "—",
+                    mode=copy.USERS_MODE_FEED if other.feed_mode else copy.USERS_MODE_TOKEN,
                     state=state,
                     email=copy.USERS_EMAIL_ON
                     if self.email.available and other.email_sealed is not None

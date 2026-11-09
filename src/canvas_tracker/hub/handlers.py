@@ -35,9 +35,14 @@ from canvas_tracker.bot.commands import (
     week_cmd,
 )
 from canvas_tracker.bot.deps import BotDeps
-from canvas_tracker.hub.parsing import contains_canvas_token, looks_like_token
+from canvas_tracker.hub.parsing import (
+    contains_canvas_token,
+    contains_feed_url,
+    looks_like_token,
+    normalize_feed_url,
+)
 from canvas_tracker.hub.registry import User
-from canvas_tracker.hub.signup import TOKEN_STEPS, Reply, Signup
+from canvas_tracker.hub.signup import SECRET_STEPS, TOKEN_STEPS, URL_STEPS, Reply, Signup
 from canvas_tracker.notify.telegram import to_markup
 from canvas_tracker.render import copy
 from canvas_tracker.render.message import ITEM_CALLBACK_PATTERN
@@ -177,25 +182,30 @@ def on_text(signup: Signup) -> Handler:
         if user is None or message is None or not message.text:
             return
         text = message.text
-        token_like = contains_canvas_token(text) or (
-            user.step in TOKEN_STEPS and looks_like_token(text)
+        feed_like = contains_feed_url(text)
+        token_like = not feed_like and (
+            contains_canvas_token(text) or (user.step in TOKEN_STEPS and looks_like_token(text))
         )
-        if user.step in TOKEN_STEPS or token_like:
-            # A token must not stay in the chat history, at whatever step it was pasted.
+        if user.step in SECRET_STEPS or token_like or feed_like:
+            # A token or feed link must not stay in the chat history, wherever it was pasted.
             deleted = True
             try:
                 await message.delete()
             except TelegramError:
                 deleted = False
-            if token_like:
+            if feed_like:
+                notice = copy.FEED_DELETED if deleted else copy.FEED_DELETE_FAILED
+                await send_replies(update, [Reply(notice)])
+            elif token_like:
                 notice = copy.TOKEN_DELETED if deleted else copy.TOKEN_DELETE_FAILED
                 await send_replies(update, [Reply(notice)])
-            if (
-                user.step in TOKEN_STEPS
-                and looks_like_token(text)
-                and signup.token_wait(user) is None
-            ):
-                await send_replies(update, [Reply(copy.TOKEN_CHECKING)])
+            checking = None
+            if feed_like and user.step in URL_STEPS | SECRET_STEPS and normalize_feed_url(text):
+                checking = copy.FEED_CHECKING
+            elif token_like and user.step in SECRET_STEPS:
+                checking = copy.TOKEN_CHECKING
+            if checking is not None and signup.token_wait(user) is None:
+                await send_replies(update, [Reply(checking)])
         await send_replies(update, await signup.text(user, text))
 
     return handler
@@ -248,13 +258,17 @@ def feedback_cmd(signup: Signup) -> Handler:
             return
         parts = (message.text or "").split(None, 1)
         body = parts[1] if len(parts) > 1 else ""
-        if contains_canvas_token(body):  # a token must not stay in the chat history
+        feed_like = contains_feed_url(body)
+        if feed_like or contains_canvas_token(body):  # secrets must not stay in the chat
             deleted = True
             try:
                 await message.delete()
             except TelegramError:
                 deleted = False
-            notice = copy.TOKEN_DELETED if deleted else copy.TOKEN_DELETE_FAILED
+            if feed_like:
+                notice = copy.FEED_DELETED if deleted else copy.FEED_DELETE_FAILED
+            else:
+                notice = copy.TOKEN_DELETED if deleted else copy.TOKEN_DELETE_FAILED
             await send_replies(update, [Reply(notice)])
         username = update.effective_user.username if update.effective_user else None
         await send_replies(update, await signup.feedback(user, body, username))

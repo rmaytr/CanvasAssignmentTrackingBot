@@ -25,6 +25,7 @@ TIER_REST = "🟡 MEDIUM / ⚪ LOW: {count} items, next: {next} → /week"
 SECTION_OVERDUE = "⚠️ OVERDUE"
 SECTION_NEWS = "📢 ANNOUNCEMENTS & EVENTS"
 NEWS_EVENT_LINE = "• 📅 {time} · {heading}"
+ALL_DAY = "all day"
 NEWS_ANNOUNCEMENT_LINE = "• 📢 {heading} (posted {when})"
 DONE_YESTERDAY = "✅ Done yesterday: {count}"
 OVERDUE_LINE = "• {heading}: was due {when}{accepted}"
@@ -60,6 +61,28 @@ AUTH_ALERT = (
     "3. Send /settings here, tap 🔑 Canvas token and paste the new one."
 )
 
+FEED_AUTH_ALERT = (
+    "📅 Canvas stopped serving your calendar feed link, so your list isn't updating.\n"
+    '1. In Canvas, open Calendar and tap "Calendar Feed" (bottom right).\n'
+    "2. Copy the link.\n"
+    "3. Send /settings here, tap 📅 Calendar feed and paste it."
+)
+# Calendar-feed mode: the feed has no submission status, so the user marks work done.
+FEED_REMINDER_HEADERS = (
+    "⏰ Due within {window}: {count} not marked done",
+    "⏰ Still to do in the next {window}: {count}",
+    "⏰ Reminder: {count} due within {window}",
+)
+FEED_SNOOZE_END_HEADER = "⏰ Snooze over: not marked done yet"
+FEED_DIGEST_NOTE = (
+    "📅 From your calendar feed, which can't see submissions: tap ✅ for what you've handed in."
+)
+FEED_OVERDUE_NOTE = "Handed it in? Tap ✅ Done (the calendar feed can't see submissions)."
+FEED_ALL_SET = (
+    "📅 You're on the calendar feed, so tap ✅ Done when you hand something in, "
+    "or I'll keep reminding you."
+)
+
 # Pairing and basic commands
 PAIRED = "✅ Paired! This bot will only talk to you now. Send /help to see what it can do."
 SEND_CODE = (
@@ -80,9 +103,10 @@ HELP = "\n".join(
         "/week: the next 7 days by priority",
         "/digest: send today's morning list now",
         "/sync: check Canvas right now",
-        "/status: last sync, token state, next list and reminder",
+        "/status: last sync, token or feed state, next list and reminder",
         "/pause 3h | 30m | until 18:00 | off: pause reminders",
-        "/settings: time zone, morning time, quiet hours, reminders, Canvas token or address",
+        "/settings: time zone, morning time, quiet hours, reminders, Canvas token, "
+        "calendar feed or address",
         "/email you@school.edu | off: also get the morning list and deadline emails",
         "/feedback your message: send a note to the person who runs this bot",
         "/disconnect: delete everything the bot knows about you",
@@ -120,6 +144,8 @@ TIER_MEDIUM = "🟡 MEDIUM"
 TIER_LOW = "⚪ LOW"
 STATUS_SYNC = "Last sync: {sync}"
 STATUS_TOKEN = "Token: {token}"
+STATUS_FEED = "Calendar feed: {token}"
+STATUS_FEED_NOTE = "Submissions: not visible with a calendar feed, so tap ✅ Done when you hand in"
 STATUS_DIGEST = "Next digest: {digest}"
 STATUS_SLOT = "Next reminder: {slot}"
 STATUS_EMAIL = "Email: {email}"
@@ -144,6 +170,9 @@ SYNC_FAILED = {
     "unavailable": "✗ Couldn't reach Canvas right now. The bot keeps retrying.",
     "protocol_error": "✗ Canvas sent an unexpected response. The bot keeps retrying.",
 }
+SYNC_FAILED_FEED_AUTH = (
+    "✗ Canvas no longer serves your calendar feed link. Send /settings → 📅 Calendar feed."
+)
 SYNC_TOO_SOON = "⏳ You just synced. Try /sync again in {seconds} s (the bot also syncs by itself)."
 
 # Stale data (PRD anti-goal: never present stale data as current)
@@ -162,8 +191,9 @@ SIGNUP_INTRO = (
     "every {interval} for anything due within {window}, until you submit it. You can "
     "change how often later in /settings.\n\n"
     "How your data is handled:\n"
-    "• Your Canvas access token is stored encrypted on the server of the person who runs "
-    "this bot. They could technically access it, so only sign up if you trust them.\n"
+    "• Your Canvas access token (or calendar feed link) is stored encrypted on the server "
+    "of the person who runs this bot. They could technically access it, so only sign up if "
+    "you trust them.\n"
     "• The bot only reads Canvas. It never submits, posts or changes anything.\n"
     "• /disconnect deletes everything right away. You can also cancel the token any time "
     "in Canvas (Account → Settings → Approved Integrations)."
@@ -179,11 +209,73 @@ URL_INVALID = (
 )
 URL_UNREACHABLE = "I couldn't find that address on the internet. Check it and send it again."
 ASK_TOKEN = (
-    "Step 2 of 5: Now create an access token for the bot.\n"
-    "1. Tap the button below (or open Canvas → Account → Settings).\n"
+    "Step 2 of 5: How should the bot read your Canvas? There are two ways.\n\n"
+    "🔑 Access token (best: knows what you've submitted)\n"
+    "1. Tap 🔗 Open Canvas settings below (or open Canvas → Account → Settings).\n"
     '2. Scroll to "Approved Integrations" and tap "+ New Access Token".\n'
     '3. Purpose: "Reminder bot". For the expiry, pick the latest date Canvas allows.\n'
-    "4. Copy the token and paste it here. I'll delete your message right away."
+    "4. Copy the token and paste it here. I'll delete your message right away.\n\n"
+    "📅 Calendar feed link (no token; you mark things done yourself)\n"
+    "If your school doesn't allow tokens, or you'd rather not make one, tap 📅 below."
+)
+BTN_USE_FEED = "📅 Calendar feed link instead"
+BTN_USE_TOKEN = "🔑 Access token instead"
+BTN_OPEN_CALENDAR = "🔗 Open Canvas calendar"
+_FEED_STEPS = (
+    "1. Tap 🔗 Open Canvas calendar below (or open Calendar in Canvas).\n"
+    '2. At the bottom right (on a phone: in the browser, not the app), tap "Calendar Feed" '
+    "and copy the link. It looks like https://school.instructure.com/feeds/calendars/user_….ics\n"
+    "3. Paste it here. It's private, like a password, so I'll delete your message right away."
+)
+ASK_FEED = (
+    "📅 Calendar feed link: no token needed, but the feed can't tell me what you've "
+    "submitted, so tap ✅ Done when you hand something in (or I'll keep reminding you).\n"
+    + _FEED_STEPS
+)
+ASK_FEED_EDIT = (
+    "Paste a fresh calendar feed link (Canvas → Calendar → Calendar Feed, bottom right). "
+    "I'll delete your message right away. /cancel keeps the current one."
+)
+ASK_FEED_SWITCH = (
+    "📅 Switch to your calendar feed link? I'd stop using your token, and couldn't see what "
+    "you've submitted any more: you'd tap ✅ Done instead.\n" + _FEED_STEPS + "\n"
+    "/cancel keeps your token."
+)
+ASK_FEED_NEW_SITE = (
+    "Now copy the calendar feed link on the new site (Calendar → Calendar Feed, bottom right) "
+    "and paste it here. I'll switch over once it works. /cancel keeps everything as it was."
+)
+ASK_TOKEN_SWITCH = (
+    "🔑 Switch to an access token? Then I can see what you've submitted and stop reminding "
+    "you about it by myself. Make one in Canvas → Account → Settings → + New Access Token "
+    "and paste it here. I'll delete your message right away. /cancel keeps your calendar feed."
+)
+FEED_INVALID = (
+    "That doesn't look like a Canvas calendar feed link. In Canvas, open Calendar, tap \"Calendar "
+    'Feed" at the bottom right and copy the whole link (https://…/feeds/calendars/….ics).'
+)
+FEED_CHECKING = "📅 Checking the feed link with Canvas…"
+FEED_TOO_MANY = (
+    "⏳ That's a lot of tries in a short time. Please wait {minutes} min, then paste the link "
+    "again."
+)
+FEED_PROBLEMS = {
+    "rejected": "✗ Canvas doesn't know that feed link. Copy it again from Calendar → "
+    "Calendar Feed and paste it here.",
+    "unreachable": "✗ I couldn't reach Canvas at {host}. Paste the link again in a minute.",
+    "not_feed": "✗ {host} didn't send a calendar for that link. Copy it again from Calendar → "
+    "Calendar Feed and paste it here.",
+}
+FEED_SAVED = (
+    "✓ Feed link works. It's stored encrypted. Remember to tap ✅ Done when you hand "
+    "something in: the feed can't tell me."
+)
+FEED_DELETED = (
+    "🧹 I deleted your message with the feed link from this chat (it's private, like a password)."
+)
+FEED_DELETE_FAILED = (
+    "⚠️ I couldn't delete your message with the feed link. Please delete it yourself "
+    "(press and hold it → Delete)."
 )
 BTN_OPEN_SETTINGS = "🔗 Open Canvas settings"
 TOKEN_FORMAT = "That doesn't look like a token. Copy the whole token from Canvas and paste it here."
@@ -235,6 +327,8 @@ QUIET_COVERS_DIGEST = (
 )
 BTN_QUIET_OFF = "Off"
 QUIET_RANGE = "{start} to {end}"
+CONNECTION_TOKEN = "🔑 access token"
+CONNECTION_FEED = "📅 calendar feed (you mark work done)"
 ALL_SET = (
     "✅ All set! Your morning list arrives at {digest} ({tz}). {rhythm} Quiet hours: {quiet}.\n"
     "Want reminders more or less often? Send /settings and tap ⏰ Reminders.\n"
@@ -244,6 +338,7 @@ FINISH_SIGNUP_FIRST = "Let's finish setting up first."
 SETTINGS = (
     "⚙️ Your settings\n"
     "Canvas: {host}\n"
+    "Connection: {connection}\n"
     "Time zone: {tz}\n"
     "Morning list: {digest}\n"
     "Quiet hours: {quiet}\n"
@@ -257,6 +352,7 @@ BTN_SET_DIGEST = "☀️ Morning time"
 BTN_SET_QUIET = "🌙 Quiet hours"
 BTN_SET_TOKEN = "🔑 Canvas token"
 BTN_SET_URL = "🏫 Canvas address"
+BTN_SET_FEED = "📅 Calendar feed"
 BTN_SET_REMINDERS = "⏰ Reminders"
 BTN_SET_EMAIL = "📧 Email"
 
@@ -298,8 +394,9 @@ ASK_TOKEN_NEW_SITE = (
     "paste it here. I'll switch over once it works. /cancel keeps everything as it was."
 )
 ACCOUNT_PROBLEM = (
-    "⚠️ I can't read your stored Canvas token right now (the bot's owner changed its setup). "
-    "Send /settings, tap 🔑 Canvas token and paste a token again."
+    "⚠️ I can't read your stored Canvas token or feed link right now (the bot's owner "
+    "changed its setup). Send /settings, tap 🔑 Canvas token or 📅 Calendar feed and paste "
+    "it again."
 )
 OWNER_BROKEN_USERS = (
     "⚠️ {count} user(s) couldn't be started: their stored tokens don't match TOKEN_KEY. "
@@ -339,13 +436,16 @@ OWNER_ONLY = "Only the bot's owner can do that."
 INVITE_LINK = "Send this link to one friend. It works once and expires in 7 days:\n{link}"
 INVITE_NO_USERNAME = "I can't make links until the bot has a username (set one in @BotFather)."
 USERS_HEADER = "👥 Users ({count} of {max})"
-USERS_LINE = "{n}. {name}{you} · {host} · {state} · email {email}"
+USERS_LINE = "{n}. {name}{you} · {host} · {mode} · {state} · email {email}"
+USERS_MODE_TOKEN = "token"
+USERS_MODE_FEED = "feed"
 USERS_EMAIL_ON = "yes"
 USERS_EMAIL_OFF = "no"
 USERS_YOU = " (you)"
 USERS_STATE_SETUP = "setting up"
 USERS_STATE_OK = "✓ synced {when}"
 USERS_STATE_AUTH = "🔑 token rejected since {when}"
+USERS_STATE_FEED_REJECTED = "📅 feed link rejected since {when}"
 USERS_STATE_NEVER = "not synced yet"
 # Owner: /health
 HEALTH = "\n".join(
@@ -383,6 +483,7 @@ MONITOR_SYNC_RESOLVED = "✅ Canvas sync for {name} (Telegram ID {telegram_id}) 
 MONITOR_REASON_UNREACHABLE = "their Canvas can't be reached"
 MONITOR_REASON_PROTOCOL = "their Canvas sends replies the bot doesn't understand"
 MONITOR_REASON_HOST = "their Canvas address now points at a private network address"
+MONITOR_REASON_FEED_TOO_LARGE = "their calendar feed is larger than the 5 MB download limit"
 MONITOR_REASON_OTHER = "an unexpected error (see the bot's log)"
 MONITOR_STUCK = (
     "⚠️ The check for {name} (Telegram ID {telegram_id}) has been running for {minutes} min. "
@@ -480,6 +581,10 @@ FEEDBACK_FAILED = "I couldn't pass that on right now. Please try again later."
 FEEDBACK_HAS_TOKEN = (
     "That message seems to contain a Canvas access token, so I didn't send it. "
     "Please send your feedback again without the token."
+)
+FEEDBACK_HAS_FEED = (
+    "That message seems to contain your private calendar feed link, so I didn't send it. "
+    "Please send your feedback again without the link."
 )
 FEEDBACK_TO_OWNER = (
     "💬 Feedback from {name} (Telegram ID {telegram_id}{username}{signup}):\n\n{text}"

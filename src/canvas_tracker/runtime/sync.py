@@ -12,17 +12,23 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from enum import StrEnum
+from zoneinfo import ZoneInfo
 
 from canvas_tracker.sources.canvas_client import (
     CanvasAuthError,
     CanvasClient,
     CanvasError,
+    CanvasProtocolError,
     CanvasUnavailable,
 )
 from canvas_tracker.sources.enrichment import fetch_enrichment
-from canvas_tracker.sources.planner import fetch_planner
+from canvas_tracker.sources.feed import FeedClient, map_feed_event
+from canvas_tracker.sources.ical import parse_calendar
+from canvas_tracker.sources.planner import fetch_planner, planner_window
 from canvas_tracker.store.repo import (
     AUTH_FAILED_SINCE,
+    FEED_ETAG,
+    FEED_LAST_MODIFIED,
     LAST_ENRICHMENT_AT,
     LAST_SUCCESSFUL_SYNC_AT,
     LAST_SYNC_ATTEMPT_AT,
@@ -68,21 +74,28 @@ def enrichment_due(
     )
 
 
-class SyncService:
+class SyncBase:
+    """What every way of reading Canvas shares: success and failure bookkeeping in the
+    user's store, and the host check before any request."""
+
     def __init__(
         self,
-        client: CanvasClient,
         store: Store,
         base_url: str,
         timeout_s: float | None = None,
         host_check: Callable[[], Awaitable[bool]] | None = None,
     ) -> None:
-        self.client = client
         self.host_check = host_check
         self.store = store
         self.base_url = base_url
         self.sync_timeout_s = SYNC_TIMEOUT_S if timeout_s is None else timeout_s
         self.enrich_timeout_s = ENRICH_TIMEOUT_S if timeout_s is None else timeout_s
+
+    async def sync(self, now: datetime) -> SyncOutcome:
+        raise NotImplementedError
+
+    async def enrich(self, now: datetime) -> SyncOutcome:
+        raise NotImplementedError
 
     def _failed(self, now: datetime, exc: CanvasError) -> SyncOutcome:
         self.store.set_state(LAST_SYNC_ERROR, type(exc).__name__)
@@ -112,6 +125,21 @@ class SyncService:
         except Exception:  # a broken check refuses rather than lets the request through
             log.exception("canvas host check failed")
             return False
+
+
+class SyncService(SyncBase):
+    """Reads the Canvas Planner API with the user's access token."""
+
+    def __init__(
+        self,
+        client: CanvasClient,
+        store: Store,
+        base_url: str,
+        timeout_s: float | None = None,
+        host_check: Callable[[], Awaitable[bool]] | None = None,
+    ) -> None:
+        super().__init__(store, base_url, timeout_s, host_check)
+        self.client = client
 
     async def sync(self, now: datetime) -> SyncOutcome:
         self.store.set_time(LAST_SYNC_ATTEMPT_AT, now)
@@ -163,5 +191,68 @@ class SyncService:
             log.exception("enrichment failed")
             return SyncOutcome.PROTOCOL_ERROR
         self.store.apply_enrichment(enrichment)
+        self.store.set_time(LAST_ENRICHMENT_AT, now)
+        return SyncOutcome.OK
+
+
+class FeedSync(SyncBase):
+    """Reads the user's private calendar feed instead of the API (no token needed).
+
+    Entries in the planner's window that the feed no longer lists are marked gone,
+    as with the planner. The feed has no grade weights, so ``enrich`` only records
+    that there is nothing to fetch."""
+
+    def __init__(
+        self,
+        client: FeedClient,
+        store: Store,
+        base_url: str,
+        zone: ZoneInfo,
+        timeout_s: float | None = None,
+        host_check: Callable[[], Awaitable[bool]] | None = None,
+    ) -> None:
+        super().__init__(store, base_url, timeout_s, host_check)
+        self.client = client
+        self.zone = zone
+
+    async def sync(self, now: datetime) -> SyncOutcome:
+        self.store.set_time(LAST_SYNC_ATTEMPT_AT, now)
+        if not await self._host_ok():
+            return self._failed(now, CanvasHostRefused("Canvas host resolves privately"))
+        etag = self.store.get_state(FEED_ETAG)
+        modified = self.store.get_state(FEED_LAST_MODIFIED)
+        try:
+            async with asyncio.timeout(self.sync_timeout_s):
+                response = await self.client.fetch(etag, modified)
+            if response.not_modified:
+                self._succeeded(now)
+                return SyncOutcome.NOT_MODIFIED
+            try:
+                calendar = parse_calendar(response.body, self.zone)
+            except ValueError:
+                raise CanvasProtocolError("the calendar feed isn't iCalendar") from None
+        except TimeoutError:
+            return self._failed(now, CanvasUnavailable("Canvas timed out"))
+        except CanvasError as exc:
+            return self._failed(now, exc)
+        except Exception as exc:  # anything else must not take the tick down with it
+            self.store.set_state(LAST_SYNC_ERROR, type(exc).__name__)
+            log.exception("feed sync failed")
+            return SyncOutcome.PROTOCOL_ERROR
+        window = planner_window(now)
+        items = [
+            item
+            for item in (map_feed_event(e, self.base_url, self.zone) for e in calendar.events)
+            if item.due_at is not None and window[0] <= item.due_at <= window[1]
+        ]
+        self.store.upsert_items(items, now)
+        self.store.mark_gone(window, {item.ref for item in items}, now)
+        self.store.set_state(FEED_ETAG, response.etag)
+        self.store.set_state(FEED_LAST_MODIFIED, response.last_modified)
+        self._succeeded(now)
+        log.info("synced calendar feed", extra={"items": len(items)})
+        return SyncOutcome.OK
+
+    async def enrich(self, now: datetime) -> SyncOutcome:
         self.store.set_time(LAST_ENRICHMENT_AT, now)
         return SyncOutcome.OK

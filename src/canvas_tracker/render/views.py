@@ -192,7 +192,7 @@ def render_status(info: StatusInfo, now: datetime, settings: Settings) -> Render
     )
     lines = [
         copy.STATUS_SYNC.format(sync=sync or copy.STATUS_NEVER),
-        copy.STATUS_TOKEN.format(token=token),
+        (copy.STATUS_FEED if settings.calendar_feed else copy.STATUS_TOKEN).format(token=token),
         copy.STATUS_DIGEST.format(digest=when(info.next_digest_at)),
         copy.STATUS_SLOT.format(slot=slot),
         copy.STATUS_REMINDERS_OFF
@@ -201,6 +201,8 @@ def render_status(info: StatusInfo, now: datetime, settings: Settings) -> Render
     ]
     if info.pause_until is not None and info.pause_until > now:
         lines.append(copy.STATUS_PAUSED.format(until=when(info.pause_until)))
+    if settings.calendar_feed:
+        lines.append(copy.STATUS_FEED_NOTE)
     email = email_label(info.email_address, available=info.email_available, masked=True)
     lines.append(copy.STATUS_EMAIL.format(email=email))
     if info.next_event_at is not None:

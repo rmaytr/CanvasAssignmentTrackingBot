@@ -1,0 +1,59 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Instructure//Canvas//EN (handmade test fixture)
+X-WR-CALNAME:Test Student Calendar (School)
+X-WR-TIMEZONE:America/Chicago
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+DTEND:20261021T045900Z
+DTSTART:20261021T045900Z
+CLASS:PUBLIC
+DESCRIPTION:Write 500 words\, then upload.\nUse the template\; cite sources. A 
+ long line folded by Canvas.
+SUMMARY:Essay draft [ENG 101]
+UID:event-assignment-501
+URL;VALUE=URI:https://canvas.example.edu/calendar?assignment_id=501&inc
+ lude_contexts=course_42
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20261022
+DTEND;VALUE=DATE:20261022
+SUMMARY:Problem set 4 [MATH 210]
+UID:event-assignment-502
+URL;VALUE=URI:https://canvas.example.edu/courses/43/assignments/502
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;TZID=America/New_York:20261020T150000
+DTEND;TZID=America/New_York:20261020T160000
+SUMMARY:Office hours [ENG 101]
+UID:event-calendar-event-9001
+URL;VALUE=URI:https://canvas.example.edu/calendar?event_id=9001&include_
+ contexts=course_42
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Reminder text that must not leak into the event
+TRIGGER:-PT15M
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20261023
+SUMMARY:Reading day
+UID:event-calendar-event-9002
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261024T170000Z
+SUMMARY:Cancelled review session [MATH 210]
+STATUS:CANCELLED
+UID:event-calendar-event-9003
+END:VEVENT
+BEGIN:VEVENT
+SUMMARY:No start time
+UID:event-calendar-event-9004
+END:VEVENT
+BEGIN:VEVENT
+DTSTART:20261201T170000Z
+SUMMARY:Final project [ENG 101]
+UID:event-assignment-503
+END:VEVENT
+END:VCALENDAR

@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from zoneinfo import available_timezones
 
 from canvas_tracker.config import validate_base_url
+from canvas_tracker.sources.feed import FEED_PATH_RE
 
 _BLOCKED_SUFFIXES = (".local", ".internal", ".localhost", ".lan", ".home", ".arpa")
 _HOST_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$")
@@ -182,3 +183,38 @@ def contains_canvas_token(text: str) -> bool:
 def looks_like_token(text: str) -> bool:
     value = text.strip()
     return 20 <= len(value) <= 200 and " " not in value and value.isascii()
+
+
+FEED_MARKER = "/feeds/calendars/"
+
+
+def contains_feed_url(text: str) -> bool:
+    """Whether ``text`` holds something like a Canvas calendar feed link (a secret)."""
+    return FEED_MARKER in text.lower()
+
+
+def normalize_feed_url(text: str) -> str | None:
+    """``https://host/feeds/calendars/….ics`` from a pasted feed link (``webcal://`` and a
+    missing scheme are fine), or None unless it is HTTPS on a public-looking Canvas host
+    with a feed path and nothing else (no credentials, other port or query)."""
+    raw = text.strip()
+    if not raw or any(c.isspace() for c in raw):
+        return None
+    lowered = raw.lower()
+    if lowered.startswith("webcal://"):
+        raw = "https://" + raw[len("webcal://") :]
+    elif "://" not in raw:
+        raw = f"https://{raw}"
+    parts = urlsplit(raw)
+    if parts.scheme.lower() != "https" or parts.username or parts.password or parts.query:
+        return None
+    try:
+        port = parts.port
+    except ValueError:
+        return None
+    if port not in (None, 443) or FEED_PATH_RE.match(parts.path) is None:
+        return None
+    base = normalize_canvas_url(parts.hostname or "")
+    if base is None:
+        return None
+    return f"{base}{parts.path}"
