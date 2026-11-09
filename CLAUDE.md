@@ -26,5 +26,6 @@ uv run pip-audit                # CI fails on known vulnerabilities
 
 ## Known open items
 
-- Instructure's API policy disfavours users pasting personal tokens into a shared app; public launch needs OAuth or the calendar-feed (iCal) mode (roadmap in README).
+- Instructure's API policy disfavours users pasting personal tokens into a shared app. Calendar-feed mode (`sources/feed.py`, `sources/ical.py`) is the no-token path for a public launch; OAuth needs a developer key from each school. Feed parsing is not yet checked against a real (scrubbed) Canvas feed.
+- Item ids can be reused within one user database after purges (`items` has no AUTOINCREMENT), so a very old button could reach a newer item.
 - Deferred minors: `DIGEST_LOOKAHEAD_DAYS` (env, up to 60) can exceed the 21-day planner fetch window, which the per-user choices (7/14/21) don't; the public-address check runs before each request batch, not at connect time (httpx resolves again, so a sub-second rebind is still possible; pinning the IP would close it).
