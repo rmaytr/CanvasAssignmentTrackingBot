@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Telegram bot that reads Canvas LMS To Do lists and sends a ranked morning list plus 2-hourly reminders until work is submitted. **Friends mode (v0.2):** one shared, invite-only bot; each user signs up in chat; private beta with 6 users. Owner deploys with `deploy/install.sh` on a Debian/Ubuntu VM (Docker Compose).
+Telegram bot that reads Canvas LMS To Do lists and sends a ranked morning list plus repeating reminders (every 2 h by default, per-user choice) until work is submitted. **Friends mode (v0.2):** one shared, invite-only bot; each user signs up in chat; private beta with 6 users. Owner deploys with `deploy/install.sh` on a Debian/Ubuntu VM (Docker Compose).
 
 Read before changing things: `README.md`, `docs/architecture.md`, `docs/how-it-works.md`, `CONTRIBUTING.md`.
 
@@ -27,4 +27,4 @@ uv run pip-audit                # CI fails on known vulnerabilities
 ## Known open items
 
 - Instructure's API policy disfavours users pasting personal tokens into a shared app; public launch needs OAuth or the calendar-feed (iCal) mode (roadmap in README).
-- Deferred minors: sign-up intro hard-codes "2 hours / 14 days"; the public-address check runs before each request batch, not at connect time (httpx resolves again, so a sub-second rebind is still possible; pinning the IP would close it).
+- Deferred minors: `DIGEST_LOOKAHEAD_DAYS` (env, up to 60) can exceed the 21-day planner fetch window, which the per-user choices (7/14/21) don't; the public-address check runs before each request batch, not at connect time (httpx resolves again, so a sub-second rebind is still possible; pinning the IP would close it).

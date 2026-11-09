@@ -166,6 +166,19 @@ Each user gets one list per day at the time they choose (any time up to 8 PM), w
 
 While **anything** is due within 24 hours and not done, the bot runs a **reminder cycle**. That's one combined message every 2 hours, listing every urgent item, nearest first. The cycle's slots are measured in fixed durations from the moment it opened, so a daylight-saving change can't shift or duplicate them.
 
+Those are the defaults. Each person can choose their own rhythm in `/settings → ⏰ Reminders`:
+
+| Setting | Choices | Default |
+|---|---|---|
+| Repeat | every 1, 2, 3 or 4 hours, or **no repeats** | 2 hours |
+| Counts as urgent | due within 12, 24 or 48 hours | 24 hours |
+| Morning list covers | the next 7, 14 or 21 days | 14 days |
+
+(The owner sets the defaults with `REMINDER_INTERVAL_MINUTES`, `REMINDER_WINDOW_HOURS` and `DIGEST_LOOKAHEAD_DAYS`; people who never open the menu follow them.)
+
+- **Changing the interval mid-cycle** restarts the cycle from its latest slot, so nothing is sent twice and nothing is skipped: the next reminder comes on the new spacing after the last one, or when it was already planned if that is sooner. A slot that was due at that moment but not sent yet still goes out once.
+- **No repeats** keeps the morning list and every one-off message below. The 🆕 alert then covers work posted after the morning list and due before the next one, once per item. A cycle that was open stays open quietly, so switching repeats back on continues the old rhythm instead of reminding again at once.
+
 Example: *Homework 4* is due Tuesday at 11:59 PM; the student's quiet hours are 12–8 AM and their morning list is at 8 AM. They submit at 7:40 PM.
 
 ```mermaid
@@ -198,7 +211,7 @@ gantt
 
 | Message | When |
 |---|---|
-| 🆕 *Just posted and due soon* | New work that's due before the next reminder slot (it would otherwise be missed) |
+| 🆕 *Just posted and due soon* | New work that's due before the next reminder slot (it would otherwise be missed); with no repeats, before the next morning list. Not sent when a *Snooze over* message for the same item goes out |
 | 🌙 *Due while you sleep* | 30 minutes before quiet hours start, if anything is due during them |
 | ⏰ *Snooze over* | When a 💤 snooze ends and the item is still open |
 | 📢 *New announcement* | Once per course announcement, when it's posted (after quiet hours or `/pause`). Posted overnight, it only appears in the morning list. Only an 🔗 Open button: there's nothing to submit |

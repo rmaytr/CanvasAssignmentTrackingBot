@@ -44,7 +44,7 @@
 
 Canvas tells you about a deadline once, in an email you probably didn't read. **This bot keeps telling you until the work is in.**
 
-It reads your Canvas To Do list through the official API, sends you a **ranked list every morning**, and while anything is due within 24 hours it sends **one combined reminder every 2 hours, until Canvas shows it submitted**. It runs as a Telegram bot: there's nothing to install, and the buttons work from your lock screen.
+It reads your Canvas To Do list through the official API, sends you a **ranked list every morning**, and while anything is due within 24 hours it sends **one combined reminder every 2 hours, until Canvas shows it submitted** (each person can pick 1–4 hours, or no repeats). It runs as a Telegram bot: there's nothing to install, and the buttons work from your lock screen.
 
 > **Private beta:** 6 students at several universities use it every day. A public release is planned. See the [roadmap](#roadmap).
 
@@ -56,8 +56,8 @@ It reads your Canvas To Do list through the official API, sends you a **ranked l
 
 | | |
 |---|---|
-| ☀️ **Ranked morning list** | Everything due in the next 14 days, ranked by urgency, **share of your final grade** and estimated effort, with a one-line explanation for each item. It arrives at the time you choose, in your own time zone. |
-| ⏰ **Reminders until submitted** | One combined message every 2 hours while anything is due within 24 hours. Submitting in Canvas stops it automatically, usually within 10 minutes. |
+| ☀️ **Ranked morning list** | Everything due in the next 14 days (or 7 or 21, your choice), ranked by urgency, **share of your final grade** and estimated effort, with a one-line explanation for each item. It arrives at the time you choose, in your own time zone. |
+| ⏰ **Reminders until submitted** | One combined message every 2 hours while anything is due within 24 hours. Each person picks their own rhythm in `/settings → ⏰ Reminders`: every 1, 2, 3 or 4 hours or no repeats, for work due within 12, 24 or 48 hours. Submitting in Canvas stops it automatically, usually within 10 minutes. |
 | ✅ **One-tap buttons** | **Done** for paper or in-class work Canvas can't see, **Snooze 2h**, **Open** in Canvas, and **Undo** within 10 minutes. |
 | 🌙 **Respects your sleep** | Quiet hours you choose, an 11:30 PM warning about anything due overnight, and **one** overdue notice instead of endless nagging. |
 | 🔒 **Private by design** | Read-only Canvas access, tokens encrypted at rest, your token message deleted from the chat, invite-only access, and `/disconnect` erases everything. |
@@ -136,7 +136,7 @@ You need a Telegram account and an always-on Linux server (Google Cloud's free t
 | `/digest` | Your morning list, right now |
 | `/sync` · `/status` | Check Canvas now · last sync, token health, next list and reminder |
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
-| `/settings` | Time zone, morning time, quiet hours, Canvas token or address |
+| `/settings` | Time zone, morning time, quiet hours, reminder rhythm, Canvas token or address |
 | `/email you@school.edu` | Also email the morning list and a heads-up 2 h before each deadline (`/email off` stops it) |
 | `/disconnect` | Delete everything the bot knows about you |
 | `/invite` · `/users` · `/remove N` | *Owner only:* invite links, user health (never anyone's assignments), removal |
@@ -245,7 +245,8 @@ Canvas tokens are as powerful as a password, so the bot treats them that way:
 - [ ] OAuth with participating schools and stronger protection for a public release (per-user key wrapping, monitoring)
 - [x] Hardening: rate limits on token checks and `/sync`, abandoned sign-ups free their slot, buttons tied to their database, Canvas host re-checked before each sync
 - [x] Optional email: the morning list and a heads-up 2 hours before each deadline (any SMTP provider)
-- [ ] Per-user reminder rhythm, localization (all copy already lives in one module)
+- [x] Per-user reminder rhythm: how often (or no repeats), what counts as urgent, how far the morning list looks
+- [ ] Localization (all copy already lives in one module)
 
 ## Documentation
 

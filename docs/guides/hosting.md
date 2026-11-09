@@ -105,6 +105,13 @@ Connect to the server any time with `gcloud compute ssh canvas-bot --zone=us-cen
 The bot restarts by itself after a crash or a server reboot. Logs never contain
 anyone's tokens.
 
+## Reminder defaults
+
+`.env` holds the reminder rhythm everyone starts with: `REMINDER_INTERVAL_MINUTES`
+(120), `REMINDER_WINDOW_HOURS` (24) and `DIGEST_LOOKAHEAD_DAYS` (14). Each person can
+choose their own in `/settings → ⏰ Reminders`; a person who never does follows these
+defaults, including after you change them.
+
 ## Optional: email
 
 People can also get the morning list by email, plus one email 2 hours before each

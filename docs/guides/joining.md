@@ -6,7 +6,7 @@
 
 > I set up a Telegram bot that sends you a ranked list of what's due on Canvas every
 > morning, and reminds you every 2 hours before anything is due within 24 hours,
-> until you submit it. Tap this link (it works once, for 7 days): LINK
+> until you submit it (you can make that more or less often). Tap this link (it works once, for 7 days): LINK
 > It'll ask for your Canvas address and a Canvas "access token" (it explains how,
 > about 2 minutes). Your token is stored encrypted on my server, and /disconnect
 > deletes everything.
@@ -26,16 +26,22 @@
 4. **Pick your time zone** (a button, or type your city), **the time for your morning
    list** (any time up to 8 PM), and **quiet hours** when the bot never messages you.
 
-That's it: "✅ All set!".
+That's it: "✅ All set!". Reminders start at the bot's defaults; change them any time
+(see *Reminders* below).
 
 ## Using it
 
-- **Morning list**: everything due in the next 14 days, ranked by urgency and how
+- **Morning list**: everything due in the next 14 days (or 7 or 21), ranked by urgency and how
   much of your grade it's worth. Tap ✅ to mark something done that Canvas can't
   see (paper or in-class work).
 - **Reminders**: every 2 hours while something is due within 24 hours and not
   submitted. Submitting in Canvas stops them by themselves (within about 10
   minutes). Buttons: ✅ Done, 💤 2h snooze, 🔗 open in Canvas.
+  To change the rhythm, send `/settings` and tap **⏰ Reminders**: repeat every 1, 2,
+  3 or 4 hours or not at all, count work as urgent from 12, 24 or 48 hours before
+  it's due, and have the morning list cover 7, 14 or 21 days. With **No repeats** you
+  still get the morning list and one-off messages (new last-minute work, work due
+  overnight, overdue work, the end of a snooze).
 - **Announcements and events**: a 📢 message when a course posts an announcement,
   and a 📅 heads-up an hour before a calendar event. They also appear in the morning
   list under *Announcements & events*. They're never treated as homework, so no
@@ -54,7 +60,7 @@ That's it: "✅ All set!".
 | `/digest` | The morning list, right now |
 | `/sync` | Check Canvas right now (once a minute; the bot also checks every 10 minutes) |
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
-| `/settings` | Change time zone, morning time, quiet hours, Canvas token or Canvas address |
+| `/settings` | Change time zone, morning time, quiet hours, reminder rhythm, Canvas token or Canvas address |
 | `/email you@school.edu` | Also get the morning list by email, plus a heads-up 2 hours before each deadline (`/email off` stops it) |
 | `/disconnect` | Delete everything the bot knows about you |
 

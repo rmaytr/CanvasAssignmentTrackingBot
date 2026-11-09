@@ -196,6 +196,7 @@ stateDiagram-v2
         edit_quiet
         edit_token
         edit_url --> edit_token: new host saved as pending
+        reminders: ⏰ Reminders menu (no step; each button saves one value)
     }
     active --> edits: /settings → button
     edits --> active: saved (tenant rebuilt) · /cancel · /start
@@ -211,6 +212,7 @@ stateDiagram-v2
 | Time zone | `Chicago`, `Pacific`, `EST`, `Pacific Standard Time`, `Europe/Berlin`, or a button | Unknown names; legacy fixed-offset zones |
 | Morning time | `8`, `7:30 am`, `19:00`, `7.45 AM`, or a button | After 8 PM; invalid times |
 | Quiet hours | `23:00-07:00`, `11pm - 7am`, `12 am to 8 am`, `off`, or a button | Ranges that would hide the morning list |
+| Reminder rhythm (`/settings` only) | Buttons: every 1/2/3/4 h or no repeats, urgent within 12/24/48 h, list of 7/14/21 days | Any other value (an old or forged button just shows the menu again) |
 
 ## 7. Data model
 
@@ -235,6 +237,9 @@ erDiagram
         text pending_base_url "new host awaiting a token"
         text created_at
         text last_seen_at "last sign-up answer (abandoned after 7 days)"
+        int reminder_interval_minutes "NULL = bot default · 0 = no repeats"
+        int reminder_window_hours "NULL = bot default"
+        int digest_lookahead_days "NULL = bot default"
     }
     INVITES {
         text code_hash PK "SHA-256 of the code"
@@ -292,7 +297,8 @@ erDiagram
     }
     CYCLES {
         int id PK
-        text anchor_utc
+        text anchor_utc "slot 0; in the future after an interval change"
+        int interval_minutes "interval the slots are counted in"
         text closed_at_utc
     }
     COURSES ||--o{ ASSIGNMENT_GROUPS : has
@@ -343,9 +349,9 @@ Bot-wide settings come from the environment ([`.env.example`](../.env.example)).
 | `OWNER_TELEGRAM_ID` | empty | Owner's Telegram ID; if empty, the owner claims the bot with a one-time code from the log |
 | `DATA_DIR` | `/data` | Where `registry.db` and `users/*.db` live |
 | `MAX_USERS` | `25` | Sign-up cap (owner included); sign-ups idle for 7 days stop counting |
-| `DIGEST_LOOKAHEAD_DAYS` | `14` | How far ahead the morning list looks |
-| `REMINDER_WINDOW_HOURS` | `24` | "Due soon" window that starts the reminder cycle |
-| `REMINDER_INTERVAL_MINUTES` | `120` | Time between reminders (minimum 30) |
+| `DIGEST_LOOKAHEAD_DAYS` | `14` | How far ahead the morning list looks (default; each user can pick 7, 14 or 21) |
+| `REMINDER_WINDOW_HOURS` | `24` | "Due soon" window that starts the reminder cycle (default; users pick 12, 24 or 48) |
+| `REMINDER_INTERVAL_MINUTES` | `120` | Time between reminders, minimum 30 (default; users pick 1–4 h or no repeats) |
 | `OVERDUE_REMINDERS` · `OVERDUE_REMINDER_MAX_HOURS` | `false` · `48` | Optional reminders after the deadline |
 | `ITEM_RETENTION_DAYS` | `30` | Purge items this long past due |
 | `LOG_LEVEL` | `INFO` | JSON logs to stdout |
