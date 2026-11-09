@@ -21,7 +21,7 @@ This page describes how the bot is put together: the processes and data stores, 
 ```mermaid
 flowchart LR
     S1["🎓 Students<br/>(Telegram app)"] <-->|"messages, buttons"| TG["Telegram Bot API"]
-    OW["🧑‍💻 Owner<br/>(Telegram app)"] <-->|"/invite · /users · /remove"| TG
+    OW["🧑‍💻 Owner<br/>(Telegram app)"] <-->|"/invite · /users · /remove · /health<br/>⚠️ alerts"| TG
     TG <-->|"long polling (HTTPS)"| BOT
 
     subgraph VM["Always-on Linux VM (e.g. Google Cloud e2-micro)"]
@@ -86,7 +86,7 @@ It takes the current time, a snapshot of one user's data and that user's setting
 | `runtime` | `loop`, `sync`, `logging` | Minute-aligned tick; sync cadence and error state; JSON logs with redaction |
 | `notify` | `base`, `telegram`, `email` | `Notifier` protocol; Telegram delivery with `RetryAfter` handling; SMTP email (stdlib, in a worker thread) |
 | `bot` | `commands`, `callbacks`, `pairing`, `deps` | `/today` `/week` `/digest` `/sync` `/status` `/pause`; ✅/💤/↩️/🔕 buttons; owner pairing code |
-| `hub` | `hub`, `tenant`, `registry`, `secretbox`, `signup`, `parsing`, `handlers`, `migrations/` | Everything multi-user |
+| `hub` | `hub`, `tenant`, `registry`, `secretbox`, `signup`, `parsing`, `handlers`, `monitor`, `migrations/` | Everything multi-user; owner alerts, `/health` and the hourly summary (`monitor`) |
 
 ## 3. Multi-user model
 
@@ -110,6 +110,7 @@ flowchart LR
 - Database paths are built from the integer Telegram ID: `DATA_DIR/users/<id>.db`.
 - Button callbacks carry only a row ID and that file's random salt (`d:42:9f3a0c1b`). The row is looked up in the **sender's** own file, so a forged or forwarded button can never touch someone else's data. The salt is made when the file is created, so after `/disconnect` and re-joining (a new file whose IDs start again at 1) an old button answers "this button is from before you reconnected" instead of acting on a new item. Buttons sent before salts existed (`d:42`) still work in files that existed then, and are refused by files created later.
 - `/users` reads only sync health (last sync, token state) from each tenant, never items, and from the registry only whether an email address is stored (yes/no, never the address).
+- The owner monitor (`hub/monitor.py`) sees each started user only as a `Watched` record: display name, Telegram ID, last good sync, the sync error's class name, whether the token is rejected, and when a still-running tick started. Its alerts and `/health` carry names, IDs and counts; the hourly log line carries counts only. Send and email counts arrive through callbacks (`Runtime.on_send`, a wrapper around the mailer), never by reading anyone's messages.
 - `/status` reads the user's own email address through their tenant (`BotDeps.email_address`) and shows it masked.
 - `/feedback` sends the owner the sender's display name, Telegram ID, @username and the note itself, never anything from their Canvas. It is limited to 5 delivered notes per user per hour (in memory, like the other rate limits), refuses notes that contain a Canvas token (and deletes that message) and notes over 3,000 characters. The owner's own `/feedback` is only acknowledged.
 
@@ -251,7 +252,7 @@ erDiagram
         text used_at
     }
     STATE {
-        text key PK "owner_telegram_id, last_tick_at"
+        text key PK "owner_telegram_id, last_tick_at, monitor_alerts"
         text value
     }
     USERS ||--o| INVITES : "redeemed"
@@ -319,6 +320,7 @@ A due-date change clears the bot's flags, which is how extensions re-open items.
 
 | Concern | Approach |
 |---|---|
+| Monitoring | Runs once per hub tick after the heartbeat is written, inside a 30 s timeout and a catch-all, so a monitoring bug or a slow owner chat never delays or breaks anyone's tick. The disk is read at most every 10 minutes. |
 | Many users | One asyncio event loop. Each tenant's tick is its own task; the hub never waits on a stuck one (bounded wait of 50 s, then skip). |
 | Telegram updates | Processed **concurrently** (`concurrent_updates=True`), but serialized **per user** with a lock, so one person's sign-up steps never interleave. |
 | Settings change during a tick | Rebuilding a tenant cancels its running tick, closes its client and connection, then starts fresh. A closed tenant never ticks. |
@@ -339,6 +341,7 @@ A due-date change clears the bot's flags, which is how extensions re-open items.
 | `TOKEN_KEY` lost or replaced | "Can't read your stored token, paste it again" | Detected at start; the owner is told; nobody gets a false "Canvas rejected you" |
 | One user's record broken | That user is asked to contact the owner | Everyone else keeps running |
 | Clock change (DST) | Nothing unusual | All schedules are UTC durations; local times are only converted at the edges |
+| A user's Canvas fails for 6 h (not the token), emails keep failing (3 in a row), the disk gets low (< 200 MB or < 5 %), or a tick runs over 10 min | Nothing new | The owner gets one ⚠️ message per problem per 24 h and a ✅ when it clears. Alert state is kept in the registry (`monitor_alerts`), so a restart doesn't repeat them. Monitoring runs after the users' ticks, bounded to 30 s, and its errors are only logged |
 
 ## 10. Configuration
 

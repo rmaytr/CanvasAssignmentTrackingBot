@@ -237,3 +237,4 @@ The bot never presents old data as current:
 - The morning list shows a ⚠️ banner and **never** says "Nothing due 🎉" when it couldn't check.
 - `/status` shows the last successful sync and whether the token works, plus the next morning list and reminder, the reminder rhythm, whether email is on (the address masked, like `m***@school.edu`), when the next 📅 event heads-up goes out and when the latest announcement was posted.
 - A token Canvas explicitly rejects (`401` with `WWW-Authenticate`) triggers one 🔑 alert, then a re-check every 6 hours or as soon as a new token is pasted. A `401` without that header, for example a course you can't see, is just skipped.
+- If a person's Canvas keeps failing for another reason (it can't be reached, or answers in a way the bot doesn't understand) for 6 hours, the person who runs the bot gets one ⚠️ message with that person's name and Telegram ID (never their assignments), and a ✅ when it works again.

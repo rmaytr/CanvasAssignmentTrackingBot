@@ -83,6 +83,7 @@ Owner commands:
 | `/invite` | A new one-time sign-up link |
 | `/users` | Who's connected, their school, whether their Canvas access works and whether they get email (yes/no; never their assignments or address) |
 | `/remove 3` | Remove user 3 from the `/users` list: the bot asks you to confirm by name, then deletes their data and tells them |
+| `/health` | How the server is doing: uptime, version, users, the last check, free disk space, email and how many people have sync problems (see *Monitoring*) |
 
 When someone sends `/feedback …`, the bot forwards it to you as a 💬 message with their
 Telegram name, ID and @username (never anything from their Canvas). Friends can send
@@ -109,6 +110,40 @@ Connect to the server any time with `gcloud compute ssh canvas-bot --zone=us-cen
 
 The bot restarts by itself after a crash or a server reboot. Logs never contain
 anyone's tokens.
+
+## Monitoring
+
+The bot watches the server for you and messages you in Telegram when something needs
+attention. Each problem is reported at most once a day, and a short ✅ note follows
+when it clears. The messages carry only names and Telegram IDs (as `/users` does), never
+anyone's assignments, tokens or email addresses.
+
+| ⚠️ Message | What it means | What to do |
+|---|---|---|
+| Canvas sync for *name* has failed for 6 h | Their school's Canvas can't be reached or answers oddly (not a token problem: those go to the person themselves) | Usually a Canvas outage that fixes itself. If it lasts, check their address in `/users` and ask them. |
+| The last 3 emails couldn't be sent | The mail server refuses the bot | See *Optional: email* and the log (`docker compose logs --tail 50 bot`) for the error kind. |
+| The data volume is nearly full | Under 200 MB or 5% free on the disk that holds the data | Free space: `sudo docker system prune` removes old images; `df -h` shows what's left. |
+| The check for *name* has been running for 10 min | Their Canvas hangs; nobody else is held up | Usually clears by itself. If it keeps coming back, restart the bot. |
+
+You need to have messaged the bot yourself for alerts to reach you (claiming it as the
+owner counts). `/health` shows the same picture on demand:
+
+```text
+🩺 Health
+Version: 0.2.0
+Up for: 3 d 4 h
+Users: 5 active, 1 signing up (max 25)
+Last check: today 9:41 AM (0 m ago)
+Disk: 8.2 GB free of 9.7 GB (85%)
+Email: set up
+Sync problems: none
+Open alerts: 0
+```
+
+Once an hour the log also gets one `hourly summary` line with counts only (users, messages
+sent by kind, failures, sync problems, free disk space), which is handy for
+`sudo docker compose logs bot | grep "hourly summary"`. The container's own health check
+(`docker compose ps` shows `healthy`) fails if the bot stops checking for 3 minutes.
 
 ## Reminder defaults
 
@@ -155,16 +190,42 @@ person has to paste a token again through `/settings → 🔑 Canvas token`. Not
 is lost. The installer refuses to make a new key while old data exists. Don't share
 the key, and don't copy it anywhere public.
 
-To back up everything (the key and all data) to your computer, run in Cloud Shell:
+## Back up and restore
+
+To back up everything to your computer, run in Cloud Shell:
 
 ```sh
 gcloud compute ssh canvas-bot --zone=us-central1-a --command \
-  'cd ~/CanvasAssignmentTrackingBot && sudo docker compose stop >/dev/null && sudo tar czf - secrets $(sudo docker volume inspect -f "{{.Mountpoint}}" canvasassignmenttrackingbot_data); sudo docker compose start >/dev/null' > canvas-bot-backup.tgz
+  'cd ~/CanvasAssignmentTrackingBot && sudo docker compose stop >/dev/null && sudo tar czf - .env secrets $(sudo docker volume inspect -f "{{.Mountpoint}}" canvasassignmenttrackingbot_data); sudo docker compose start >/dev/null' > canvas-bot-backup.tgz
 ```
 
-(It pauses the bot for a few seconds so the copy is consistent.)
+It pauses the bot for a few seconds so the copy is consistent. Then download
+`canvas-bot-backup.tgz` with Cloud Shell's **⋮ → Download**.
 
-then download `canvas-bot-backup.tgz` with Cloud Shell's **⋮ → Download**. Keep it private.
+The archive holds `.env` (your settings), all data, and `secrets/`: the encryption
+key, the Telegram bot token and, if you set up email, `secrets/smtp_password.txt`.
+Anyone with it can run your bot and read everyone's Canvas tokens, so keep it private
+(not in a shared folder or a repository). Make a new one after you change any secret.
+
+To restore, on a fresh server or the same one:
+
+1. Stop the old bot if it still runs (two copies with one bot token fight over messages).
+2. Copy `canvas-bot-backup.tgz` to the server's home folder (Cloud Shell: **⋮ → Upload**,
+   then `gcloud compute scp canvas-bot-backup.tgz canvas-bot:~ --zone=us-central1-a`).
+3. Run the install command from step 3 and paste the same bot token when asked. Ignore
+   the pairing code it shows; the restored data already has you as the owner.
+4. Put the backup in place and start again:
+
+   ```sh
+   cd ~/CanvasAssignmentTrackingBot && sudo docker compose stop
+   VOL="$(sudo docker volume inspect -f '{{.Mountpoint}}' canvasassignmenttrackingbot_data)"
+   sudo find "$VOL" -mindepth 1 -delete           # the empty data from step 3
+   sudo tar xzf ~/canvas-bot-backup.tgz .env secrets   # backups from before this guide: just `secrets`
+   sudo tar xzf ~/canvas-bot-backup.tgz -C / "${VOL#/}"
+   ```
+
+5. Run the install command once more. It keeps the restored key, fixes file
+   permissions and starts the bot; `/health` and `/users` should show everyone again.
 
 ## Cost
 
@@ -188,8 +249,7 @@ The same install command works on any always-on Debian or Ubuntu machine:
   64-bit Raspberry Pi OS): run the install command in its terminal. It only works
   while that computer is on and online.
 
-To move: back up (above), set up the new machine with the install command, stop the
-bot there, copy `secrets/` and the data back into place, and start it.
+To move: back up, then restore on the new machine (see *Back up and restore*).
 
 ## Troubleshooting
 
@@ -202,3 +262,8 @@ bot there, copy `secrets/` and the data back into place, and start it.
 | `/email` says email isn't set up | `SMTP_HOST` is empty in `.env`. See *Optional: email*. |
 | `/email` says it couldn't send | Check `SMTP_USERNAME`, `secrets/smtp_password.txt` and `EMAIL_FROM`, then the log for the error kind. |
 | A friend's token stops working | They get a 🔑 message with steps; they paste a new token via `/settings`. `/users` shows who's affected. |
+| You got a ⚠️ alert from the bot | See *Monitoring* for what each one means; `/health` shows what's still open. |
+| No alerts ever arrive | Alerts go to the owner's chat: send the bot any message (e.g. `/health`) so Telegram lets it write to you. |
+| `/health` says "Last check" was minutes ago | The tick loop is stuck or restarting: `sudo docker compose ps` and `sudo docker compose logs --tail 50 bot`, then `sudo docker compose restart bot`. |
+| The disk is full | `df -h` and `sudo docker system prune` (old images); the bot's data itself stays small. |
+| After a restore, the bot says users "couldn't be started" | `secrets/token_key.txt` isn't the one from the backup: restore `secrets` again (step 4 of *Back up and restore*) and run the install command. |
