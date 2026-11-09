@@ -81,8 +81,13 @@ Owner commands:
 | Command | What it does |
 |---|---|
 | `/invite` | A new one-time sign-up link |
-| `/users` | Who's connected, their school, and whether their Canvas access works (never their assignments) |
+| `/users` | Who's connected, their school, whether their Canvas access works and whether they get email (yes/no; never their assignments or address) |
 | `/remove 3` | Remove user 3 from the `/users` list: the bot asks you to confirm by name, then deletes their data and tells them |
+
+When someone sends `/feedback …`, the bot forwards it to you as a 💬 message with their
+Telegram name, ID and @username (never anything from their Canvas). Friends can send
+5 an hour, even while still signing up, so a stuck sign-up can reach you. You need to
+have messaged the bot yourself for it to reach you.
 
 Up to 25 people can sign up; change `MAX_USERS` in `~/CanvasAssignmentTrackingBot/.env`
 and run the install command again to apply it. A sign-up that's left unfinished for 7 days

@@ -109,7 +109,9 @@ flowchart LR
 
 - Database paths are built from the integer Telegram ID: `DATA_DIR/users/<id>.db`.
 - Button callbacks carry only a row ID and that file's random salt (`d:42:9f3a0c1b`). The row is looked up in the **sender's** own file, so a forged or forwarded button can never touch someone else's data. The salt is made when the file is created, so after `/disconnect` and re-joining (a new file whose IDs start again at 1) an old button answers "this button is from before you reconnected" instead of acting on a new item. Buttons sent before salts existed (`d:42`) still work in files that existed then, and are refused by files created later.
-- `/users` reads only sync health (last sync, token state) from each tenant, never items.
+- `/users` reads only sync health (last sync, token state) from each tenant, never items, and from the registry only whether an email address is stored (yes/no, never the address).
+- `/status` reads the user's own email address through their tenant (`BotDeps.email_address`) and shows it masked.
+- `/feedback` sends the owner the sender's display name, Telegram ID, @username and the note itself, never anything from their Canvas. It is limited to 5 delivered notes per user per hour (in memory, like the other rate limits), refuses notes that contain a Canvas token (and deletes that message) and notes over 3,000 characters. The owner's own `/feedback` is only acknowledged.
 
 ## 4. One minute in the life of the bot
 

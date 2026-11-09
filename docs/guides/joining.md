@@ -60,8 +60,10 @@ That's it: "✅ All set!". Reminders start at the bot's defaults; change them an
 | `/digest` | The morning list, right now |
 | `/sync` | Check Canvas right now (once a minute; the bot also checks every 10 minutes) |
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
-| `/settings` | Change time zone, morning time, quiet hours, reminder rhythm, Canvas token or Canvas address |
+| `/status` | Last sync, whether your token works, the next list and reminder, your reminder rhythm, email on or off |
+| `/settings` | Change time zone, morning time, quiet hours, reminder rhythm, email, Canvas token or Canvas address |
 | `/email you@school.edu` | Also get the morning list by email, plus a heads-up 2 hours before each deadline (`/email off` stops it) |
+| `/feedback your message` | Send a note to the person who runs the bot: a bug, an idea, or that you're stuck (they see your Telegram name and ID, never your Canvas data) |
 | `/disconnect` | Delete everything the bot knows about you |
 
 ## Your data
