@@ -7,27 +7,52 @@
 > I set up a Telegram bot that sends you a ranked list of what's due on Canvas every
 > morning, and reminds you every 2 hours before anything is due within 24 hours,
 > until you submit it (you can make that more or less often). Tap this link (it works once, for 7 days): LINK
-> It'll ask for your Canvas address and a Canvas "access token" (it explains how,
-> about 2 minutes). Your token is stored encrypted on my server, and /disconnect
-> deletes everything.
+> It'll ask for your Canvas address and either a Canvas "access token" or your
+> Canvas calendar feed link (it explains both, about 2 minutes). Either one is stored
+> encrypted on my server, and /disconnect deletes everything.
 
 ## What you do (about 2 minutes)
 
 1. **Tap the invite link** and press **Start** in Telegram.
 2. **Send your school's Canvas address**: what you see in the browser's address bar
    on Canvas, e.g. `school.instructure.com`.
-3. **Make an access token** in Canvas (the bot sends a button that opens the page):
-   *Account → Settings → Approved Integrations → + New Access Token*.
-   Purpose: `Reminder bot`; for the expiry, pick the latest date Canvas allows.
-   Copy the token and **paste it into the chat**. The bot deletes your message right away
-   and checks that the token works.
-   *No "+ New Access Token" button?* Your school doesn't allow tokens, so the bot can't
-   work for you yet.
+3. **Connect Canvas**, one of two ways (see *Token or calendar feed?* below):
+   - **🔑 Access token (best: knows what you've submitted).** In Canvas (the bot sends a
+     button that opens the page): *Account → Settings → Approved Integrations → + New
+     Access Token*. Purpose: `Reminder bot`; for the expiry, pick the latest date Canvas
+     allows. Copy the token and **paste it into the chat**.
+   - **📅 Calendar feed link (no token; you mark things done yourself).** Tap
+     **📅 Calendar feed link instead**, then in Canvas open **Calendar** and tap
+     **Calendar Feed** at the bottom right (on a phone, use the browser, not the
+     Canvas app). Copy the link, which looks like
+     `https://school.instructure.com/feeds/calendars/user_….ics`, and **paste it into
+     the chat**. You can also paste it straight away instead of a token.
+
+   Either way the bot deletes your message right away and checks it with Canvas.
+   *No "+ New Access Token" button?* Your school doesn't allow tokens: use the calendar
+   feed link.
 4. **Pick your time zone** (a button, or type your city), **the time for your morning
    list** (any time up to 8 PM), and **quiet hours** when the bot never messages you.
 
 That's it: "✅ All set!". Reminders start at the bot's defaults; change them any time
 (see *Reminders* below).
+
+## Token or calendar feed?
+
+| | 🔑 Access token | 📅 Calendar feed link |
+|---|---|---|
+| Reminders stop when you submit | ✅ by themselves | ❌ tap ✅ Done when you hand something in |
+| Due dates, events, 🔗 links | ✅ | ✅ |
+| Course announcements (📢) | ✅ | ❌ not in the feed |
+| Ranking by share of your grade | ✅ | ❌ ranked by due date (shows "weight unknown") |
+| Works if your school blocks tokens | ❌ | ✅ |
+| What the bot holds | a token as powerful as your password (the bot only uses it to read) | a link that only shows your calendar |
+
+With the calendar feed, the bot can't tell what you've submitted, so it keeps reminding
+you about anything due soon until you tap **✅ Done** (in a reminder, the morning list,
+or `/today`). That's the whole trade-off. You can switch any time in `/settings`:
+**🔑 Canvas token** or **📅 Calendar feed**. The bot forgets the old one once the new
+one works.
 
 ## Using it
 
@@ -60,8 +85,8 @@ That's it: "✅ All set!". Reminders start at the bot's defaults; change them an
 | `/digest` | The morning list, right now |
 | `/sync` | Check Canvas right now (once a minute; the bot also checks every 10 minutes) |
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
-| `/status` | Last sync, whether your token works, the next list and reminder, your reminder rhythm, email on or off |
-| `/settings` | Change time zone, morning time, quiet hours, reminder rhythm, email, Canvas token or Canvas address |
+| `/status` | Last sync, whether your token (or calendar feed) works, the next list and reminder, your reminder rhythm, email on or off |
+| `/settings` | Change time zone, morning time, quiet hours, reminder rhythm, email, Canvas token, calendar feed or Canvas address |
 | `/email you@school.edu` | Also get the morning list by email, plus a heads-up 2 hours before each deadline (`/email off` stops it) |
 | `/feedback your message` | Send a note to the person who runs the bot: a bug, an idea, or that you're stuck (they see your Telegram name and ID, never your Canvas data) |
 | `/disconnect` | Delete everything the bot knows about you |
@@ -69,8 +94,11 @@ That's it: "✅ All set!". Reminders start at the bot's defaults; change them an
 ## Your data
 
 - The bot only **reads** Canvas. It never submits, posts or changes anything.
-- Your token is stored **encrypted** on the server of the friend who runs the bot.
-  They could technically access it, so only join if you trust them.
+- Your token (or calendar feed link) is stored **encrypted** on the server of the friend
+  who runs the bot. They could technically access it, so only join if you trust them.
+- The calendar feed link is private, like a password: anyone with it can see your Canvas
+  calendar (not your grades or submissions). Don't post it anywhere. The bot deletes it
+  from the chat wherever you paste it, and keeps it out of its logs.
 - Canvas tokens are as powerful as your password and skip Duo. If you stop using the
   bot, send `/disconnect` **and** delete the token in Canvas (*Account → Settings →
   Approved Integrations*).
@@ -78,3 +106,5 @@ That's it: "✅ All set!". Reminders start at the bot's defaults; change them an
   confirm it with the code. `/email off` or `/disconnect` deletes it.
 - If Canvas ever rejects the token (for example, it expired), the bot sends a 🔑
   message: make a new token and paste it via `/settings → 🔑 Canvas token`.
+- If Canvas stops serving your calendar feed link, the bot sends a 📅 message: copy the
+  link again (*Calendar → Calendar Feed*) and paste it via `/settings → 📅 Calendar feed`.

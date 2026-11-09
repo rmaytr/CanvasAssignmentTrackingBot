@@ -58,9 +58,10 @@ It reads your Canvas To Do list through the official API, sends you a **ranked l
 |---|---|
 | ☀️ **Ranked morning list** | Everything due in the next 14 days (or 7 or 21, your choice), ranked by urgency, **share of your final grade** and estimated effort, with a one-line explanation for each item. It arrives at the time you choose, in your own time zone. |
 | ⏰ **Reminders until submitted** | One combined message every 2 hours while anything is due within 24 hours. Each person picks their own rhythm in `/settings → ⏰ Reminders`: every 1, 2, 3 or 4 hours or no repeats, for work due within 12, 24 or 48 hours. Submitting in Canvas stops it automatically, usually within 10 minutes. |
+| 📅 **No token? Use the calendar feed** | Schools that block access tokens (or people who'd rather not make one) can paste their private Canvas **calendar feed link** instead. Same morning list, reminders and events; since the feed can't see submissions, you tap ✅ Done when you hand something in. Switch any time in `/settings`. |
 | ✅ **One-tap buttons** | **Done** for paper or in-class work Canvas can't see, **Snooze 2h**, **Open** in Canvas, and **Undo** within 10 minutes. |
 | 🌙 **Respects your sleep** | Quiet hours you choose, an 11:30 PM warning about anything due overnight, and **one** overdue notice instead of endless nagging. |
-| 🔒 **Private by design** | Read-only Canvas access, tokens encrypted at rest, your token message deleted from the chat, invite-only access, and `/disconnect` erases everything. |
+| 🔒 **Private by design** | Read-only Canvas access, tokens and feed links encrypted at rest, your token or feed-link message deleted from the chat, invite-only access, and `/disconnect` erases everything. |
 | 🧭 **Honest about stale data** | If Canvas can't be reached, every message says how old its data is. It never claims "nothing due" when it doesn't know. |
 
 ## How it works
@@ -78,7 +79,7 @@ flowchart LR
     T -- "✅ Done · 💤 Snooze · ↩️ Undo" --> DB
 ```
 
-**An item counts as done** when Canvas shows it submitted, graded (for paper or in-class work), excused or marked complete, or when you tap ✅ Done. If its due date moves, an extension re-opens it automatically. **The ranking** is a transparent 100-point score:
+**An item counts as done** when Canvas shows it submitted, graded (for paper or in-class work), excused or marked complete, or when you tap ✅ Done (in calendar-feed mode, only then). If its due date moves, an extension re-opens it automatically. **The ranking** is a transparent 100-point score:
 
 ```mermaid
 pie showData
@@ -204,7 +205,7 @@ flowchart TB
 Canvas tokens are as powerful as a password, so the bot treats them that way:
 
 - **Encrypted at rest:** Fernet (AES-128-CBC + HMAC-SHA256), with the key stored outside the data volume.
-- **Never left in chat:** a message containing a token is deleted at whatever step it was pasted.
+- **Never left in chat:** a message containing a token or a calendar feed link is deleted at whatever step it was pasted.
 - **Never in logs:** known secrets and token-shaped strings are redacted from every log line, including exceptions.
 - **Hardened Canvas client:** read-only (GET only), HTTPS on port 443, host-pinned with no redirects or cross-host pagination, and private or internal addresses refused.
 - **Least-privilege container:** non-root, read-only filesystem, no Linux capabilities, file-based secrets.
@@ -214,7 +215,7 @@ Canvas tokens are as powerful as a password, so the bot treats them that way:
 ### Canvas API policy
 
 > [!IMPORTANT]
-> Instructure's API policy says apps used by multiple people should use OAuth, and that asking other users to create and paste a personal token is not allowed. The shared bot does exactly that, so it's run as a **small, invite-only private beta** among friends who understand the trade-off. Before a public launch the plan is to use OAuth through participating schools, or a calendar-feed mode that needs no token (see the [roadmap](#roadmap)). Using your own token for your own data is the most defensible setup; check your school's IT policy if you're unsure.
+> Instructure's API policy says apps used by multiple people should use OAuth, and that asking other users to create and paste a personal token is not allowed. Token mode in the shared bot does exactly that, so it's run as a **small, invite-only private beta** among friends who understand the trade-off. **Calendar-feed mode** needs no token at all: it reads the same private calendar feed Canvas offers for Google or Apple Calendar, and is the recommended way to join someone else's bot. OAuth through participating schools is still on the [roadmap](#roadmap). Using your own token for your own data is the most defensible token setup; check your school's IT policy if you're unsure.
 
 ## Project layout
 
@@ -242,12 +243,12 @@ Canvas tokens are as powerful as a password, so the bot treats them that way:
 - [x] Single-user MVP: digest, reminders, buttons, quiet hours, Docker (**v0.1**)
 - [x] Friends mode: shared invite-only bot, sign-up in chat, encrypted tokens, one-command install (**v0.2**)
 - [ ] Beta feedback: tune ranking thresholds on real use; contract tests on scrubbed real Canvas data
-- [ ] **Calendar-feed mode** for schools that block personal tokens (no token needed)
 - [ ] OAuth with participating schools and stronger protection for a public release (per-user key wrapping)
 - [x] Hardening: rate limits on token checks and `/sync`, abandoned sign-ups free their slot, buttons tied to their database, Canvas host re-checked before each sync
 - [x] Optional email: the morning list and a heads-up 2 hours before each deadline (any SMTP provider)
 - [x] Per-user reminder rhythm: how often (or no repeats), what counts as urgent, how far the morning list looks
 - [x] Owner monitoring: ⚠️ alerts for failing syncs, failing email, a full disk or a stuck check; `/health`; an hourly summary log line
+- [x] **Calendar-feed mode** for schools that block personal tokens (no token needed; you mark work done yourself)
 - [ ] Localization (all copy already lives in one module)
 
 ## Documentation

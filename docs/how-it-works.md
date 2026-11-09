@@ -49,6 +49,26 @@ The client only ever **reads**. It sends `GET` requests to `/api/v1/` paths on y
 
 Before every sync (and every token check) the bot re-checks that your Canvas host still resolves only to public addresses; a passing check is reused for 5 minutes. If the host ever starts pointing at a private address, the bot treats Canvas as unreachable and sends it nothing until that changes. A manual `/sync` works at most once a minute (the bot syncs by itself every 10 minutes anyway).
 
+### Calendar-feed mode (no token)
+
+People who can't or don't want to make an access token can give the bot their private Canvas **calendar feed** link instead (Canvas → Calendar → *Calendar Feed*, bottom right; it looks like `https://school.instructure.com/feeds/calendars/user_….ics`). The bot then downloads that one `.ics` file on the same schedule as the planner sync (every 10 minutes awake, 30 in quiet hours, and before any message if the data is over 5 minutes old), sending `If-None-Match` / `If-Modified-Since` when Canvas gave an ETag or a date.
+
+| | Access token | Calendar feed |
+|---|---|---|
+| Knows what you submitted | ✅ reminders stop by themselves | ❌ you tap ✅ Done |
+| Due dates, events, links | ✅ | ✅ |
+| Announcements | ✅ | ❌ not in the feed |
+| Grade weights for ranking | ✅ | ❌ ranked by due date and type ("weight unknown") |
+| Stops working | when the token expires or you delete it | rarely (for example if your school moves its Canvas or your account changes) |
+
+How the feed is read:
+- **Assignments** (UID `event-assignment-123`, or a link to `/assignments/123`) become work with a due date; everything else (calendar events, appointment slots) is an event: one 📅 heads-up and a line in the morning list, never a reminder.
+- `SUMMARY:Essay [ENG 101]` → title *Essay*, course *ENG 101*.
+- Times in UTC (`…Z`) are used as they are; `TZID=` times use that zone; times without a zone use the feed's `X-WR-TIMEZONE` or else yours. Canvas exports work due at 11:59 PM as an **all-day** entry, so an all-day assignment is due at **11:59 PM your time**; an all-day event starts at midnight.
+- Only entries from 28 days back to 21 days ahead are kept (as with the planner); an entry that disappears from the feed is marked gone. Cancelled entries are skipped. Repeating events count once.
+- The download is HTTPS only, from the public Canvas host the link names (re-checked before every sync, like the API), with no token, a 20-second timeout, at most 5 MB (counted after decompression) and redirects only within that host.
+- If Canvas stops serving the link (401, 403, 404 or 410), you get one 📅 message asking for a fresh link, just like a rejected token.
+
 ## 2. When is something "done"?
 
 The bot mirrors Canvas's own Planner rule, and tightens it in two places: excused work and offline work.
@@ -73,6 +93,7 @@ flowchart TD
 - **A teacher's zero on online work doesn't hide it.** Missing online work stays visible in the ⚠️ OVERDUE section while Canvas still accepts it.
 - **Extensions re-open items.** Your ✅ Done is tied to the due date you tapped it for. If the date moves, the item comes back and any snooze or 🔕 Stop is cleared.
 - **Undo** works for 10 minutes after ✅ Done.
+- **In calendar-feed mode** the feed has no submission data, so only the last check applies: an item is done when you tap ✅ Done for its due date. Reminders say *"not marked done"* instead of *"not submitted"*, and the morning list and overdue notice remind you to tap ✅.
 - **Old buttons stay harmless.** Each button carries a random code tied to your current data. After `/disconnect` and signing up again, buttons on old messages answer "this button is from before you reconnected" instead of acting on a new item.
 
 ## 3. Ranking: the 100-point score
@@ -215,11 +236,12 @@ gantt
 | 🌙 *Due while you sleep* | 30 minutes before quiet hours start, if anything is due during them |
 | ⏰ *Snooze over* | When a 💤 snooze ends and the item is still open |
 | 📢 *New announcement* | Once per course announcement, when it's posted (after quiet hours or `/pause`). Posted overnight, it only appears in the morning list. Only an 🔗 Open button: there's nothing to submit |
-| 📅 *Event at …* | One heads-up an hour before a calendar event starts |
+| 📅 *Event at …* | One heads-up an hour before a calendar event starts. All-day events (Canvas gives them at midnight) get none; the morning list shows them as "all day" |
 | ❗ *Now overdue* | **Once**, within 2 hours after the deadline. It says whether Canvas still accepts the work. Never for announcements or events |
 | 📧 *Email: morning list* | Only with `/email` on: a copy of the morning list, in the same window as the Telegram one |
 | 📧 *Email: due in 2 hours* | Only with `/email` on: one email per deadline, 2 hours before it; items due at the same instant share one email. Waits out quiet hours and `/pause`; never sent after the deadline or for work that's done, stopped or gone |
 | 🔑 *Canvas rejected your token* | Once, when the token stops working, with steps to replace it via `/settings` |
+| 📅 *Canvas stopped serving your calendar feed link* | Feed mode: once, when the link stops working, with steps to paste a fresh one via `/settings → 📅 Calendar feed` |
 
 ## 6. Quiet hours, snooze, pause and overdue
 

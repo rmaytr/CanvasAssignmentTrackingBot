@@ -34,9 +34,10 @@ flowchart LR
 
     BOT -->|"read-only REST (HTTPS :443)"| C1["School A Canvas"]
     BOT -->|"read-only REST (HTTPS :443)"| C2["School B Canvas"]
+    BOT -->|"calendar feed .ics (HTTPS :443)<br/>no token"| C2
 ```
 
-There's one process and no web server. The bot needs **no inbound ports**: it pulls updates from Telegram and pulls data from Canvas.
+There's one process and no web server. Each user's Canvas is read one of two ways: the REST API with their access token (token mode), or their private calendar feed link (feed mode, no token; see §3). The bot needs **no inbound ports**: it pulls updates from Telegram and pulls data from Canvas.
 
 ## 2. Packages and dependencies
 
@@ -56,7 +57,7 @@ flowchart TD
     notify["notify<br/>Telegram and email delivery"] --> render
     render["render<br/>messages · keyboards · copy"] --> domain
     planning["planning<br/>digest · reminders · alerts · keys"] --> domain
-    sources["sources<br/>Canvas client · Planner · enrichment"] --> domain
+    sources["sources<br/>Canvas client · Planner · enrichment · feed · iCal"] --> domain
     store["store<br/>SQLite · migrations · repository"] --> domain
     domain["domain<br/>models · done rule · priority"]
 
@@ -81,9 +82,9 @@ It takes the current time, a snapshot of one user's data and that user's setting
 | `domain` | `models`, `done_rule`, `status`, `priority` | Immutable, UTC-validated value types; the completion rule; the 100-point score |
 | `planning` | `plan`, `digest`, `reminders`, `keys`, `timeutil` | When each message is owed; deterministic send keys; DST-safe local-time helpers |
 | `render` | `digest`, `alerts`, `views`, `items`, `format`, `message`, `copy` | Message text and keyboards; HTML escaping; 4,096-character splitting; all user-facing strings |
-| `sources` | `canvas_client`, `planner`, `enrichment` | Hardened read-only Canvas client; JSON → domain mapping |
+| `sources` | `canvas_client`, `planner`, `enrichment`, `feed`, `ical` | Hardened read-only Canvas client; JSON → domain mapping; the calendar-feed client and a small pure iCalendar reader (`ical`) with the feed → domain mapping (`feed`) |
 | `store` | `db`, `repo`, `migrations/` | SQLite (WAL) per user; send claims; column ownership per data source |
-| `runtime` | `loop`, `sync`, `logging` | Minute-aligned tick; sync cadence and error state; JSON logs with redaction |
+| `runtime` | `loop`, `sync`, `logging` | Minute-aligned tick; sync cadence and error state (`SyncService` for the API, `FeedSync` for the calendar feed, sharing `SyncBase`); JSON logs with redaction |
 | `notify` | `base`, `telegram`, `email` | `Notifier` protocol; Telegram delivery with `RetryAfter` handling; SMTP email (stdlib, in a worker thread) |
 | `bot` | `commands`, `callbacks`, `pairing`, `deps` | `/today` `/week` `/digest` `/sync` `/status` `/pause`; ✅/💤/↩️/🔕 buttons; owner pairing code |
 | `hub` | `hub`, `tenant`, `registry`, `secretbox`, `signup`, `parsing`, `handlers`, `monitor`, `migrations/` | Everything multi-user; owner alerts, `/health` and the hourly summary (`monitor`) |
@@ -112,6 +113,7 @@ flowchart LR
 - `/users` reads only sync health (last sync, token state) from each tenant, never items, and from the registry only whether an email address is stored (yes/no, never the address).
 - The owner monitor (`hub/monitor.py`) sees each started user only as a `Watched` record: display name, Telegram ID, last good sync, the sync error's class name, whether the token is rejected, and when a still-running tick started. Its alerts and `/health` carry names, IDs and counts; the hourly log line carries counts only. Send and email counts arrive through callbacks (`Runtime.on_send`, a wrapper around the mailer), never by reading anyone's messages.
 - `/status` reads the user's own email address through their tenant (`BotDeps.email_address`) and shows it masked.
+- **Two ways to read Canvas.** `users.mode` is `token` (the default, and what every user who joined before feed mode has) or `feed`. A token user's tenant gets a `CanvasClient` + `SyncService` (Planner API, with enrichment); a feed user's gets a `FeedClient` + `FeedSync` (their `/feeds/calendars/….ics` link, no enrichment). Both write the same `items` table and run the same `Runtime`, so planning and rendering only learn the mode through `Settings.calendar_feed`, which changes wording ("not marked done" instead of "not submitted", a ✅ hint in the morning list and overdue notice, the feed version of the rejected-link alert). Feed items use their own plannable types (`feed_assignment`, `feed_event`, `feed_<kind>`, `feed_other` for hashed UIDs), so they can never collide with planner rows; switching mode drops the old source's cached ETag/Last-Modified (`state.source_mode`), so the first sync after a switch is a full one and marks the other source's items gone.
 - `/feedback` sends the owner the sender's display name, Telegram ID, @username and the note itself, never anything from their Canvas. It is limited to 5 delivered notes per user per hour (in memory, like the other rate limits), refuses notes that contain a Canvas token (and deletes that message) and notes over 3,000 characters. The owner's own `/feedback` is only acknowledged.
 
 ## 4. One minute in the life of the bot
@@ -187,7 +189,11 @@ The conversation state is stored in the registry (`users.step`), so a restart re
 stateDiagram-v2
     [*] --> url: /start with a valid invite<br/>(or owner pairing code)
     url --> token: valid public https Canvas host
+    url --> tz: a calendar feed link pasted here<br/>(names its own host)
+    token --> feed: 📅 button (su:mode:feed)
+    feed --> token: 🔑 button (su:mode:token)
     token --> tz: token works on Canvas<br/>(message deleted, token sealed)
+    feed --> tz: feed link works<br/>(message deleted, link sealed, mode = feed)
     tz --> digest: zone resolved<br/>(city, region, IANA name, or Canvas's own)
     digest --> quiet: time ≤ 8 PM
     quiet --> active: quiet hours don't hide the morning list
@@ -198,7 +204,10 @@ stateDiagram-v2
         edit_digest
         edit_quiet
         edit_token
-        edit_url --> edit_token: new host saved as pending
+        edit_feed
+        edit_token --> edit_feed: 📅 / 🔑 buttons
+        edit_url --> edit_token: new host saved as pending (token users)
+        edit_url --> edit_feed: new host saved as pending (feed users)
         reminders: ⏰ Reminders menu (no step; each button saves one value)
     }
     active --> edits: /settings → button
@@ -212,6 +221,7 @@ stateDiagram-v2
 |---|---|---|
 | Canvas address | `school.instructure.com`, any Canvas page URL, `https://…:443` | `http`, IP addresses, other ports, `localhost`/`.local`/`.internal`, hosts resolving to private addresses |
 | Token | Pasted with stray spaces or newlines | Anything Canvas rejects, or that can't read the To Do list; more than 5 checks in 15 minutes ("wait N min") |
+| Calendar feed link (at the address, token or feed step) | `https://…/feeds/calendars/….ics`, `webcal://…`, no scheme, `:443`, a trailing `#…` | `http`, credentials, other ports, a query, any other path, private or internal hosts; links Canvas doesn't serve (401/403/404/410) or that aren't iCalendar; shares the 5-per-15-minutes limit with tokens |
 | Time zone | `Chicago`, `Pacific`, `EST`, `Pacific Standard Time`, `Europe/Berlin`, or a button | Unknown names; legacy fixed-offset zones |
 | Morning time | `8`, `7:30 am`, `19:00`, `7.45 AM`, or a button | After 8 PM; invalid times |
 | Quiet hours | `23:00-07:00`, `11pm - 7am`, `12 am to 8 am`, `off`, or a button | Ranges that would hide the morning list |
@@ -232,7 +242,9 @@ erDiagram
         text display_name
         int is_owner
         text canvas_base_url "https://host"
-        blob token_sealed "Fernet ciphertext"
+        blob token_sealed "Fernet ciphertext (token mode)"
+        text mode "token | feed (default token)"
+        blob feed_sealed "Fernet ciphertext of the feed link (feed mode)"
         text tz "IANA zone"
         text suggested_tz "from Canvas profile"
         text digest_time "HH:MM local"
@@ -264,7 +276,7 @@ erDiagram
 erDiagram
     ITEMS {
         int id PK
-        text plannable_type "UNIQUE with plannable_id"
+        text plannable_type "UNIQUE with plannable_id; feed_* in feed mode"
         int plannable_id
         text title
         text due_at "UTC"
@@ -310,7 +322,7 @@ erDiagram
 ```
 
 **Column ownership** prevents the three writers from overwriting each other:
-- The 10-minute planner sync writes only Canvas planner fields.
+- The 10-minute planner sync writes only Canvas planner fields. In feed mode `FeedSync` writes the same columns from the feed (title, course name, due date, link) with the submission flags always false, and enrichment never runs.
 - Enrichment writes lock dates, submission types and group IDs.
 - Button presses write only the bot's own flags (`bot_done_at`, `snoozed_until`, `stop_reminders`).
 
@@ -335,6 +347,8 @@ A due-date change clears the bot's flags, which is how extensions re-open items.
 | Canvas host starts resolving to a private address (DNS rebinding) | Same as Canvas down | The host is re-checked before every sync and token check (a pass is cached for 5 min); while it fails nothing is sent to it and `last_sync_error` is `CanvasHostRefused` |
 | Someone spams `/sync` or token attempts | "You just synced, try again in N s" / "wait N min" | `/sync` at most once a minute per user; at most 5 token checks per user per 15 minutes (in memory, reset on restart) |
 | Canvas rejects the token | One 🔑 message with steps | Re-checks every 6 h, or immediately after a new token is pasted via `/settings` |
+| Canvas stops serving a feed link (401/403/404/410) | One 📅 message: copy a fresh link from Calendar → Calendar Feed | Same as a rejected token (`FeedRejected` is a `CanvasAuthError`), so the owner isn't alerted for it |
+| A calendar feed grows past 5 MB, redirects to another host, or isn't iCalendar | Same as Canvas down | The download stops at 5 MB (counted after decompression); the error class (`FeedTooLarge`, `CanvasProtocolError`) goes into `last_sync_error`, and after 6 h the owner's alert names it |
 | Telegram rate-limits | A slight delay | Honors `RetryAfter`, then retries the claim on the next tick |
 | Crash or restart mid-send | At most one duplicate message | Claims and per-part progress resume the work |
 | Server down for hours | A late morning list (up to 4 h); missed reminder slots skipped | Catches up without a burst of messages |
@@ -365,7 +379,8 @@ Bot-wide settings come from the environment ([`.env.example`](../.env.example)).
 
 | Decision | Alternatives considered | Why |
 |---|---|---|
-| Canvas **Planner API** + personal token | Scraping, iCal feed, GraphQL, OAuth | The only student-accessible source with per-student due dates **and** submission status in one call. iCal is planned as a fallback; OAuth needs each school's admin. |
+| Canvas **Planner API** + personal token | Scraping, iCal feed, GraphQL, OAuth | The only student-accessible source with per-student due dates **and** submission status in one call. OAuth needs each school's admin. |
+| **Calendar feed** as the token-free alternative | OAuth only; `icalendar` package | Every student has a feed link without making a token, and some schools block tokens. It has no submission status, so feed mode relies on ✅ Done. A ~200-line pure reader covers what Canvas emits (VEVENT, UTC/TZID/DATE, folding, escapes) without another dependency to audit. |
 | **Telegram** | SMS, email, ntfy, Pushover, Discord, WhatsApp | Free, has buttons, works everywhere. US SMS needs paid carrier registration. |
 | **Long polling** | Webhooks | No inbound ports, no TLS certificate, works behind NAT. |
 | **SQLite file per user** | One shared database with `user_id` columns | Isolation is structural, deletion is `rm`, and the single-user core needed no changes. |

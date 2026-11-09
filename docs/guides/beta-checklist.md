@@ -21,6 +21,7 @@ messages, no false nags, and every morning list on time** (see
 - [ ] **Done on offline work:** tap ✅ Done on a paper or in-class item. It leaves the next reminder; ↩️ Undo within 10 minutes brings it back.
 - [ ] **Snooze:** tap 💤 2h. The item skips the next reminder, then comes back once.
 - [ ] **Quiet hours:** nothing arrives between 00:00 and 08:00; anything due overnight gets the 23:30 warning.
+- [ ] **Calendar feed sign-up:** a friend taps **📅 Calendar feed link instead** and pastes their feed link. The message disappears, `/today` matches their Canvas calendar, `/users` shows `feed`, and ✅ Done stops an item's reminders.
 - [ ] **Revoked token:** delete a test token in Canvas while the bot uses it. Exactly one 🔑 alert; after you paste a new one via `/settings → 🔑 Canvas token`, `/sync` works without a restart.
 - [ ] **Restart mid-cycle:** `docker compose restart bot` while reminders are active. No duplicate message; the next reminder arrives on schedule.
 - [ ] **Owner health:** `/health` shows the right number of users, a "Last check" under a minute ago and the server's real free disk space; a friend sending `/health` gets "Only the bot's owner can do that."

@@ -17,7 +17,8 @@ Please include what you found, how to reproduce it, and its impact. You'll get a
 
 | Data | Where | Protection | Retention |
 |---|---|---|---|
-| Canvas access token | `registry.db` | **Fernet-encrypted** (AES-128-CBC + HMAC-SHA256); key in a separate Docker secret | Until `/disconnect`, `/remove`, or replaced |
+| Canvas access token | `registry.db` | **Fernet-encrypted** (AES-128-CBC + HMAC-SHA256); key in a separate Docker secret | Until `/disconnect`, `/remove`, or replaced (or the user switches to the calendar feed) |
+| Canvas calendar feed link (feed mode, instead of a token) | `registry.db` | **Fernet-encrypted**, like a token: the link itself is the secret | Until `/disconnect`, `/remove`, or replaced (or the user switches to a token) |
 | Telegram bot token, encryption key | `secrets/*.txt` on the host → Docker secrets | File mode 600, owned by the container user; never in env vars, logs or the database | Owner-managed |
 | Canvas address, time zone, morning time, quiet hours, display name | `registry.db` | Server disk | Until the user leaves |
 | Assignment titles, due dates, status, course names, grade weights | `users/<telegram id>.db` (one file per user) | Server disk, readable only by that user's tenant | Items purged 30 days past due |
@@ -32,11 +33,11 @@ Please include what you found, how to reproduce it, and its impact. You'll get a
 |---|---|---|---|
 | T1 | **One user reads or changes another user's data** | Separate database file and tenant per user; every update routed by the sender's Telegram ID; button callbacks resolved only in the sender's own file; `/users` exposes sync health only | `test_friends_only_see_and_touch_their_own_items` |
 | T2 | **A stranger uses the bot** | Invite-only: one-time 96-bit codes stored as hashes, 7-day expiry, `MAX_USERS` cap; private chats only; unknown users' messages dropped without a reply; owner pairing code limited to 5 tries and 15 minutes | `test_gate_drops_strangers…`, `test_strangers_need_an_invite…` |
-| T3 | **A token leaks through the chat** | The message containing a token is deleted at **any** step; the bot says so only if deletion worked; the bot never repeats a token | `test_a_token_pasted_at_any_step_is_deleted`, `test_failed_delete_is_not_claimed` |
-| T4 | **A token leaks through logs or errors** | Redaction of known secrets, tokens learned at runtime and token-shaped patterns (in messages, arguments and tracebacks); `httpx`/`httpcore` logs at WARNING; startup errors never echo values | `test_pasted_token_never_leaks`, `test_secrets_never_leak` (sentinel tokens through the whole stack) |
+| T3 | **A token or feed link leaks through the chat** | The message containing a token or a calendar feed link is deleted at **any** step (also inside `/feedback`, which then isn't forwarded); the bot says so only if deletion worked; the bot never repeats either | `test_a_token_pasted_at_any_step_is_deleted`, `test_failed_delete_is_not_claimed`, `test_feed_link_pasted_anywhere_is_deleted_but_not_used` |
+| T4 | **A token or feed link leaks through logs or errors** | Redaction of known secrets, tokens and feed links learned at runtime, and token-shaped and `/feeds/calendars/…` patterns (in messages, arguments and tracebacks); `httpx`/`httpcore` logs at WARNING; startup errors never echo values | `test_pasted_token_never_leaks`, `test_secrets_never_leak` (sentinel tokens through the whole stack), `test_feed_links_are_redacted_from_logs` |
 | T5 | **The database is copied** | Tokens are Fernet ciphertext; the key is a separate secret outside the data volume | `test_round_trip_and_ciphertext_hides_the_token`, leak tests scan every `.db` file |
-| T6 | **The token is sent somewhere other than Canvas** | Client is GET-only to `/api/v1/` on one pinned host; redirects refused; cross-host pagination refused; HTTPS port 443 only | `test_canvas_client.py` |
-| T7 | **The bot is pointed at internal hosts (SSRF)** | IP literals, `localhost`, `.local`/`.internal`/`.lan` and non-443 ports rejected; the host must resolve only to public addresses at sign-up | `test_canvas_url_rejects…`, `test_bad_addresses_are_refused` |
+| T6 | **The token is sent somewhere other than Canvas** | Client is GET-only to `/api/v1/` on one pinned host; redirects refused; cross-host pagination refused; HTTPS port 443 only. The feed client sends no token at all, fetches only `https://<that host>/feeds/calendars/….ics`, follows redirects only within that host, and stops at 5 MB (after decompression) | `test_canvas_client.py`, `test_feed_source.py` |
+| T7 | **The bot is pointed at internal hosts (SSRF)** | IP literals, `localhost`, `.local`/`.internal`/`.lan` and non-443 ports rejected, for Canvas addresses and feed links alike; the host must resolve only to public addresses at sign-up and again before every sync and check (a pass is cached for 5 minutes) | `test_canvas_url_rejects…`, `test_bad_addresses_are_refused`, `test_normalize_feed_url_refuses_everything_else`, `test_feed_on_a_private_host_is_refused_before_any_request` |
 | T8 | **Container escape or tampering** | Non-root UID 10001, read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, memory cap, no inbound ports | Verified by running the image under `compose.yaml` |
 | T9 | **Supply-chain compromise** | `uv.lock` with hashes; base image pinned by digest; GitHub Actions pinned to commit SHAs; `pip-audit` in CI; Dependabot | CI `audit` job |
 | T10 | **Lost or replaced encryption key** | Detected at start-up; the owner is told; users are asked to re-paste instead of being told Canvas rejected them; the installer refuses to create a new key while old data exists | `test_wrong_token_key_is_not_reported…` |
@@ -45,12 +46,14 @@ Please include what you found, how to reproduce it, and its impact. You'll get a
 ### Known limitations
 
 - **The owner can technically read tokens.** Whoever runs the bot holds both the database and the key. Friends are told this plainly during sign-up. A public release would need per-user key wrapping and a hosted key service.
-- **DNS rebinding:** the address check runs at sign-up; a host that later re-points to a private address isn't re-checked on every request. Impact is limited: HTTPS with certificate verification, no response content is echoed, and nothing listens inside the container.
-- **No rate limit** yet on token attempts or `/sync` per user.
-- **Canvas API policy:** asking other people to paste personal tokens into a shared app conflicts with Instructure's API policy (see the [README](README.md#canvas-api-policy)). Friends mode is limited to a small, invite-only beta for that reason.
+- **DNS rebinding:** the address check runs before every sync and check, but a pass is reused for 5 minutes, so a host re-pointed inside that window could be reached until it expires. Impact is limited: HTTPS with certificate verification, no response content is echoed, and nothing listens inside the container.
+- **Rate limits are in memory:** at most 5 token or feed checks per user per 15 minutes and one `/sync` a minute; a restart resets them.
+- **Canvas API policy:** asking other people to paste personal tokens into a shared app conflicts with Instructure's API policy (see the [README](README.md#canvas-api-policy)). Friends mode is limited to a small, invite-only beta for that reason. Calendar-feed mode avoids tokens entirely and is the recommended way to join a shared bot.
+- **A feed link can't always be revoked.** It only shows calendar items (titles, dates, links), not grades or submissions, but Canvas doesn't give every student a way to reset it. Anyone who has the link can read that calendar until it changes.
 
 ## If a token leaks
 
 1. **The user:** in Canvas, go to *Account → Settings → Approved Integrations* and delete the token (and any you don't recognize). Then create a new one and paste it via `/settings → 🔑 Canvas token`.
 2. **The owner:** if the database **and** `secrets/token_key.txt` may have been copied together, treat every token as leaked. Ask everyone to delete and replace theirs, then rotate the key (stop the bot, back up, generate a new key, and have users re-paste).
-3. **A Telegram bot token leak:** send `/revoke` to @BotFather, put the new token in `secrets/telegram_bot_token.txt` and restart.
+3. **A calendar feed link leak:** it exposes only the calendar (titles, due dates, links), not grades or submissions, and can't be used to act in Canvas. If your Canvas has a way to reset the feed, use it and paste the new link via `/settings → 📅 Calendar feed`; otherwise ask your school's Canvas admin.
+4. **A Telegram bot token leak:** send `/revoke` to @BotFather, put the new token in `secrets/telegram_bot_token.txt` and restart.

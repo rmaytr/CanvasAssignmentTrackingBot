@@ -81,7 +81,7 @@ Owner commands:
 | Command | What it does |
 |---|---|
 | `/invite` | A new one-time sign-up link |
-| `/users` | Who's connected, their school, whether their Canvas access works and whether they get email (yes/no; never their assignments or address) |
+| `/users` | Who's connected, their school, how they connect (`token` or `feed`, the calendar feed link), whether their Canvas access works and whether they get email (yes/no; never their assignments, feed link or address) |
 | `/remove 3` | Remove user 3 from the `/users` list: the bot asks you to confirm by name, then deletes their data and tells them |
 | `/health` | How the server is doing: uptime, version, users, the last check, free disk space, email and how many people have sync problems (see *Monitoring*) |
 
@@ -120,7 +120,7 @@ anyone's assignments, tokens or email addresses.
 
 | ⚠️ Message | What it means | What to do |
 |---|---|---|
-| Canvas sync for *name* has failed for 6 h | Their school's Canvas can't be reached or answers oddly (not a token problem: those go to the person themselves) | Usually a Canvas outage that fixes itself. If it lasts, check their address in `/users` and ask them. |
+| Canvas sync for *name* has failed for 6 h | Their school's Canvas can't be reached or answers oddly (not a token or feed-link problem: those go to the person themselves), or their calendar feed has grown past 5 MB | Usually a Canvas outage that fixes itself. If it lasts, check their address in `/users` and ask them. A feed that's too large can't be read: ask them to switch to a token. |
 | The last 3 emails couldn't be sent | The mail server refuses the bot | See *Optional: email* and the log (`docker compose logs --tail 50 bot`) for the error kind. |
 | The data volume is nearly full | Under 200 MB or 5% free on the disk that holds the data | Free space: `sudo docker system prune` removes old images; `df -h` shows what's left. |
 | The check for *name* has been running for 10 min | Their Canvas hangs; nobody else is held up | Usually clears by itself. If it keeps coming back, restart the bot. |
@@ -262,6 +262,8 @@ To move: back up, then restore on the new machine (see *Back up and restore*).
 | `/email` says email isn't set up | `SMTP_HOST` is empty in `.env`. See *Optional: email*. |
 | `/email` says it couldn't send | Check `SMTP_USERNAME`, `secrets/smtp_password.txt` and `EMAIL_FROM`, then the log for the error kind. |
 | A friend's token stops working | They get a 🔑 message with steps; they paste a new token via `/settings`. `/users` shows who's affected. |
+| A friend's school doesn't allow access tokens | They tap **📅 Calendar feed link instead** at the token step and paste their Canvas calendar feed link (see the [joining guide](joining.md#token-or-calendar-feed)). Reminders then stop only when they tap ✅ Done. |
+| A friend's calendar feed link stops working | They get a 📅 message with steps; they paste a fresh link via `/settings → 📅 Calendar feed`. `/users` shows "📅 feed link rejected". |
 | You got a ⚠️ alert from the bot | See *Monitoring* for what each one means; `/health` shows what's still open. |
 | No alerts ever arrive | Alerts go to the owner's chat: send the bot any message (e.g. `/health`) so Telegram lets it write to you. |
 | `/health` says "Last check" was minutes ago | The tick loop is stuck or restarting: `sudo docker compose ps` and `sudo docker compose logs --tail 50 bot`, then `sudo docker compose restart bot`. |

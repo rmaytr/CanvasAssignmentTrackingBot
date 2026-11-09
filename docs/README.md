@@ -29,5 +29,5 @@ timeline
     v0.1 single-user MVP : Planner sync · ranking · reminders : Docker · CI · 20-day simulation
     v0.2 friends mode : invite-only shared bot · chat sign-up : encrypted tokens · one-command install
     Private beta : 6 students at several universities
-    Next : calendar-feed mode · OAuth · public release
+    Next : OAuth · public release
 ```
