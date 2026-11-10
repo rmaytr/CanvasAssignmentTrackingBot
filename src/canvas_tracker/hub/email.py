@@ -26,6 +26,19 @@ MAX_ATTEMPTS = 5
 OFF_WORDS = frozenset({"off", "stop", "remove", "delete", "none"})
 
 
+_SCHOOL_TLDS = frozenset({"edu"})  # US universities: uab.edu, mail.uab.edu
+_SCHOOL_SECOND_LEVEL = frozenset({"edu", "ac"})  # unimelb.edu.au, ox.ac.uk
+
+
+def looks_like_school_address(address: str) -> bool:
+    """A university or school domain, whose mail filters often hold back new senders
+    silently (seen with Microsoft 365 at universities). Only used to show a hint."""
+    labels = address.rpartition("@")[2].lower().split(".")
+    if labels[-1] in _SCHOOL_TLDS or "k12" in labels:
+        return True
+    return len(labels) >= 3 and labels[-2] in _SCHOOL_SECOND_LEVEL and len(labels[-1]) == 2
+
+
 def _code_hash(telegram_id: int, code: str) -> str:
     return hashlib.sha256(f"{telegram_id}:{code}".encode()).hexdigest()
 
@@ -111,7 +124,10 @@ class EmailSetup:
             email_code_expires_at=now + CODE_LIFETIME,
             email_code_attempts=0,
         )
-        return [copy.EMAIL_CODE_SENT.format(address=address)]
+        sent_reply = copy.EMAIL_CODE_SENT.format(address=address)
+        if looks_like_school_address(address):
+            return [sent_reply, copy.EMAIL_SCHOOL_HINT]
+        return [sent_reply]
 
     async def _confirm(self, user: User, code: str) -> list[str]:
         if user.email_pending_sealed is None or user.email_code_hash is None:

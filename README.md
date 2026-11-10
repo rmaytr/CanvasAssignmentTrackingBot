@@ -138,7 +138,7 @@ You need a Telegram account and an always-on Linux server (Google Cloud's free t
 | `/sync` · `/status` | Check Canvas now · last sync, token health, next list and reminder, reminder rhythm, email, next event heads-up, latest announcement |
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
 | `/settings` | Time zone, morning time, quiet hours, reminder rhythm, email, Canvas token, calendar feed or address |
-| `/email you@school.edu` | Also email the morning list and a heads-up 2 h before each deadline (`/email off` stops it) |
+| `/email you@gmail.com` | Also email the morning list and a heads-up 2 h before each deadline (`/email off` stops it) |
 | `/feedback your message` | Send a note to the person who runs the bot (5 an hour) |
 | `/disconnect` | Delete everything the bot knows about you |
 | `/invite` · `/users` · `/remove N` · `/health` | *Owner only:* invite links, user health and email on/off (never anyone's assignments or address), removal, server health (uptime, disk, email, sync problems) |

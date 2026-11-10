@@ -2,7 +2,14 @@ import re
 from datetime import timedelta
 from pathlib import Path
 
-from canvas_tracker.hub.email import CODE_LIFETIME, MAX_ATTEMPTS, RESEND_AFTER
+import pytest
+
+from canvas_tracker.hub.email import (
+    CODE_LIFETIME,
+    MAX_ATTEMPTS,
+    RESEND_AFTER,
+    looks_like_school_address,
+)
 from canvas_tracker.hub.handlers import email_cmd
 from canvas_tracker.render import copy
 from tests.factories import NOW
@@ -48,8 +55,8 @@ async def test_add_confirm_and_turn_off(tmp_path: Path) -> None:
     await sign_up(env, 1)
     assert await email(env, 1) == [copy.EMAIL_STATUS_OFF]
 
-    [reply] = await email(env, 1, "Me@School.EDU")
-    assert reply == copy.EMAIL_CODE_SENT.format(address="Me@school.edu")
+    replies = await email(env, 1, "Me@School.EDU")
+    assert replies == [copy.EMAIL_CODE_SENT.format(address="Me@school.edu"), copy.EMAIL_SCHOOL_HINT]
     to, msg = env.outbox.sent[0]
     assert to == "Me@school.edu"
     code = last_code(env)
@@ -171,3 +178,29 @@ async def test_email_command_handler_replies_in_chat(tmp_path: Path) -> None:
     bot = mock_bot()
     await email_cmd(env.signup)(message_update("/email", user_id=1, bot=bot), context())
     assert bot.send_message.await_args.kwargs["text"] == copy.EMAIL_STATUS_OFF
+
+
+@pytest.mark.parametrize(
+    ("address", "school"),
+    [
+        ("me@uab.edu", True),
+        ("me@mail.uab.edu", True),
+        ("me@ox.ac.uk", True),
+        ("me@unimelb.edu.au", True),
+        ("me@district.k12.ca.us", True),
+        ("me@gmail.com", False),
+        ("me@icloud.com", False),
+        ("me@education.com", False),
+        ("me@edu.example.com", False),
+    ],
+)
+def test_school_addresses_are_recognised(address: str, school: bool) -> None:
+    assert looks_like_school_address(address) is school
+
+
+async def test_personal_address_gets_no_school_hint(tmp_path: Path) -> None:
+    env = build_hub(tmp_path, email=True)
+    await sign_up(env, 1)
+    assert await email(env, 1, "me@gmail.com") == [
+        copy.EMAIL_CODE_SENT.format(address="me@gmail.com")
+    ]

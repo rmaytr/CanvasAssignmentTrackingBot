@@ -155,32 +155,151 @@ defaults, including after you change them.
 ## Optional: email
 
 People can also get the morning list by email, plus one email 2 hours before each
-deadline (`/email you@school.edu` in the chat, confirmed with a code). It works with
-any SMTP provider. You need an account with one:
+deadline (`/email you@gmail.com` in the chat, confirmed with a 6-digit code). The bot
+speaks plain SMTP, so any provider works. Email is off until you set `SMTP_HOST`.
 
-- **Brevo** (free, 300 emails a day). Best with a domain you own: verify the domain
-  in Brevo (*Senders, Domains & Dedicated IPs*) so mail isn't marked as spam. Under
-  *SMTP & API → SMTP*, create an SMTP key.
-  Host `smtp-relay.brevo.com`, port `587`, username = the SMTP login Brevo shows.
-- **Gmail** (free, about 500 a day, no domain needed). Make a new Google account for
-  the bot, turn on 2-Step Verification, then create an *App password*.
-  Host `smtp.gmail.com`, port `587`, username = the Gmail address.
+**Recommended setup:** your own domain (about $10 a year) on **Cloudflare**, sending
+through **Brevo** (free, 300 emails a day). Mail then comes from an address like
+`canvastracker@yourdomain.com`, and inbox providers trust it far more than mail
+sent through a free provider. It takes about 45 minutes, plus up to an hour
+waiting for DNS. No domain? See [Gmail instead](#gmail-instead-no-domain) below.
 
-On the server:
+### 1. Buy the domain (Cloudflare)
+
+1. Create an account at **dash.cloudflare.com**.
+2. **Domain Registration → Register Domains**, pick a short `.com` and buy it.
+   Leave auto-renew on. WHOIS privacy is included, so your name and address stay
+   hidden.
+
+### 2. Create the Brevo account
+
+Sign up at **brevo.com** on the Free plan and fill in the profile. Brevo asks for a
+postal address. It goes into the footer of *marketing campaigns* only; the bot sends
+*transactional* mail written by its own code, which doesn't include it. If you'd rather
+not give your home address, use a PO box or a virtual mailbox. New accounts are
+sometimes "under review" for a few hours; you can carry on meanwhile.
+
+### 3. Authenticate the domain in Brevo
+
+1. Brevo → your name → **Senders, Domains & Dedicated IPs → Domains → Add a domain**.
+2. **Branded subdomain:** optional, leave it empty. It only changes how tracked
+   links look and has no effect on delivery.
+3. **Setup method: Automatic.** Brevo signs in to Cloudflare and adds the DNS records
+   for you. (Manual also works: copy each record into Cloudflare → your domain →
+   **DNS → Records**.)
+4. In Cloudflare → **DNS → Records**, check that the **CNAME** records Brevo added show
+   a grey cloud (**DNS only**), not orange. Authentication breaks if they're proxied.
+5. Wait for the green checkmarks in Brevo (minutes to an hour).
+
+### 4. Add the sender
+
+Brevo → **Senders → Add a sender**, for example `Canvas Tracker <canvastracker@yourdomain.com>`.
+It verifies by itself once the domain is authenticated. **Write down the exact address:
+`EMAIL_FROM` on the server must match it,** or Brevo refuses to send.
+
+### 5. Create the SMTP key
+
+Brevo → your name → **SMTP & API → SMTP**. Note the **Login** (it looks like
+`8a1b2c001@smtp-brevo.com`; it's not your own address), then **Generate a new SMTP
+key** and copy it. It's shown once. If the key ever ends up somewhere it shouldn't
+(a chat, a screenshot, the terminal screen), delete it here and generate a new one.
+
+### 6. Receive mail at your domain (optional, recommended)
+
+So replies, bounces and DMARC reports reach you, and you have an address like
+`support@yourdomain.com` for later:
+
+1. Cloudflare → **Compute → Email Service → Email Routing → Onboard Domain** and pick
+   your domain. Approve the records it adds.
+2. **Destination addresses → Add destination address**: your personal email. Click
+   the verification link Cloudflare sends.
+3. **Routing rules → Create routing rule**: email pattern = the part before the @ of
+   your sender (for example `canvastracker`), action **Send to an email**, destination =
+   your personal email. Repeat for `support` if you like. Leave **Catch-all** disabled.
+4. A domain may have only **one** SPF record. In **DNS → Records**, search for `spf`. If
+   there are two TXT records starting with `v=spf1`, replace them with one:
+   `v=spf1 include:_spf.mx.cloudflare.net include:spf.brevo.com ~all`
+
+### 7. Configure the server
+
+SSH into the VM (the prompt must show the VM's name, not `cloudshell`), then run these
+**one at a time**. Short commands survive copy-paste; long ones can be split by the
+browser terminal, and a split secret command can print the secret on screen.
 
 ```sh
 cd ~/CanvasAssignmentTrackingBot
-read -rsp "SMTP password or key: " P && printf '%s' "$P" | sudo tee secrets/smtp_password.txt >/dev/null; unset P; echo
-nano .env   # fill in SMTP_HOST, SMTP_USERNAME and EMAIL_FROM (see .env.example)
+read -rsp "SMTP key: " P; echo
+printf '%s' "$P" | sudo tee secrets/smtp_password.txt >/dev/null
+unset P
+sudo wc -c secrets/smtp_password.txt   # about 90 for a Brevo key; 0 means not saved
 ```
 
-Then run the install command again (it fixes file permissions and restarts the bot),
-or run `sudo docker compose up -d --force-recreate`. `EMAIL_FROM` must be an address
-your provider lets you send from: the Gmail address, or one on your verified domain.
+Then add the settings (skip any line that's already in `.env`; `grep -E '^(SMTP|EMAIL)' .env` shows them):
 
-Test it by sending `/email` plus your own address to the bot. If the code doesn't
-arrive, check spam, then `sudo docker compose logs --tail 50 bot`. The logs show the
-kind of error (for example `SMTPAuthenticationError`) but never addresses or passwords.
+```sh
+echo >> .env
+echo 'SMTP_HOST=smtp-relay.brevo.com' >> .env
+echo 'SMTP_PORT=587' >> .env
+echo 'SMTP_SECURITY=starttls' >> .env
+echo 'EMAIL_FROM=canvastracker@yourdomain.com' >> .env
+echo 'EMAIL_FROM_NAME=Canvas Tracker' >> .env
+read -rp "SMTP login: " L; echo "SMTP_USERNAME=$L" >> .env; unset L
+grep -E '^(SMTP|EMAIL)' .env
+```
+
+Finally run the install command again: it fixes the file permissions and restarts
+the bot in under a minute.
+
+### 8. Test
+
+Send `/email` plus your personal address to the bot; the code should arrive within a
+minute (check spam the first time). Then:
+
+- **No address leak:** in Gmail, **⋮ → Show original**, and search for your street name.
+- **Links:** in a morning-list email, hover over an assignment link. If it goes
+  through a Brevo address first, turn off click tracking in Brevo's transactional
+  settings, so links go straight to Canvas.
+- **Score (optional):** send the code to the address shown on mail-tester.com
+  (`/email off` first, then set your real address again). 9/10 or more is good.
+
+### School addresses
+
+University mail systems (often Microsoft 365) can accept the email and then hide it in
+a quarantine only their IT staff can see, especially from a new domain. Junk and Safe
+senders don't help. Brevo → **Transactional → Logs** shows what happened:
+
+| Brevo status | Meaning |
+|---|---|
+| Delivered, but not in the inbox | Accepted, then hidden by the school. A "first opening" from a Microsoft address is their scanner, not the person. |
+| Deferred / soft bounce | "Try later", common for new domains; Brevo retries. |
+| Hard bounce / blocked | Refused; the details show why. Brevo then blocks that address: unblock it under **Transactional → Blocked contacts** after fixing the cause. |
+
+The bot suggests a personal address when a code goes to a school domain. Asking the
+school's IT to allowlist your domain is the other fix. As the owner you can still
+confirm your own school address by reading the code in Brevo's log within 15 minutes.
+
+Using "Canvas" in the sender name or domain may also trigger brand-impersonation
+filters, and "Canvas" is Instructure's trademark: worth a neutral name before a
+public launch.
+
+### Gmail instead (no domain)
+
+Make a separate Google account for the bot, turn on 2-Step Verification, then create
+an **App password** (search "App passwords" in the account settings) and use it
+without spaces as the SMTP key. Settings: `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`,
+`SMTP_USERNAME` and `EMAIL_FROM` = the bot's Gmail address. Gmail allows about 500
+emails a day, fine for a small group.
+
+### If sending fails
+
+`sudo docker compose logs --tail 30 bot` shows the kind of error, never addresses or
+passwords:
+
+| Error | Fix |
+|---|---|
+| `SMTPAuthenticationError` | Wrong login or key: redo step 7. |
+| `SMTPSenderRefused` | `EMAIL_FROM` isn't a verified sender: compare it with step 4. |
+| The bot says "Email isn't set up" | `SMTP_HOST` is missing or empty in `.env`. |
 
 ## Keep the key safe
 

@@ -107,7 +107,7 @@ HELP = "\n".join(
         "/pause 3h | 30m | until 18:00 | off: pause reminders",
         "/settings: time zone, morning time, quiet hours, reminders, Canvas token, "
         "calendar feed or address",
-        "/email you@school.edu | off: also get the morning list and deadline emails",
+        "/email you@gmail.com | off: also get the morning list and deadline emails",
         "/feedback your message: send a note to the person who runs this bot",
         "/disconnect: delete everything the bot knows about you",
         "/help: this list",
@@ -535,7 +535,7 @@ BOT_COMMANDS = (
     ("status", "Last sync and next reminder"),
     ("pause", "Pause reminders, e.g. /pause 3h"),
     ("settings", "Time zone, times, reminders, Canvas token"),
-    ("email", "Get emails too, e.g. /email you@school.edu"),
+    ("email", "Get emails too, e.g. /email you@gmail.com"),
     ("feedback", "Send a note to the person who runs the bot"),
     ("help", "All commands"),
     ("disconnect", "Delete everything about you"),
@@ -552,19 +552,26 @@ EMAIL_STATUS_ON = (
 EMAIL_STATUS_OFF = (
     "📧 I can also email you the morning list, and a heads-up 2 hours before each "
     "deadline (assignments due at the same time come in one email).\n"
-    "Send /email followed by your address, for example /email you@school.edu."
+    "Send /email followed by your address, for example /email you@gmail.com. A personal "
+    "address works best: school mail systems sometimes hold back emails from new senders."
 )
-EMAIL_INVALID = "That doesn't look like an email address. Try /email you@school.edu."
+EMAIL_INVALID = "That doesn't look like an email address. Try /email you@gmail.com."
 EMAIL_CODE_SENT = (
     "📨 I sent a 6-digit code to {address}. Send it here as /email 123456 within "
     "15 minutes. Check your spam folder if it isn't there in a minute."
 )
+EMAIL_SCHOOL_HINT = (
+    "🏫 School mail systems sometimes hold back emails from new senders without telling "
+    "you, even after you add them as a safe sender. If the code doesn't arrive within a "
+    "few minutes, a personal address (Gmail, iCloud, Outlook.com) is the most reliable: "
+    "/email you@gmail.com"
+)
 EMAIL_SEND_FAILED = "I couldn't send the email. Check the address, or try again later."
 EMAIL_WAIT = "I just sent a code. Wait a minute before asking for another one."
-EMAIL_NO_PENDING = "There's no code waiting. Send /email you@school.edu first."
+EMAIL_NO_PENDING = "There's no code waiting. Send /email you@gmail.com first."
 EMAIL_CODE_WRONG = "That code isn't right. Check the email and try again."
-EMAIL_CODE_EXPIRED = "That code has expired. Send /email you@school.edu for a new one."
-EMAIL_CODE_LOCKED = "Too many wrong codes. Send /email you@school.edu for a new one."
+EMAIL_CODE_EXPIRED = "That code has expired. Send /email you@gmail.com for a new one."
+EMAIL_CODE_LOCKED = "Too many wrong codes. Send /email you@gmail.com for a new one."
 EMAIL_VERIFIED = (
     "✅ Email confirmed. You'll get the morning list and a heads-up 2 hours before each "
     "deadline at {address}. Telegram messages keep coming as before."

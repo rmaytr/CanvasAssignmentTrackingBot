@@ -73,8 +73,10 @@ one works.
   list under *Announcements & events*. They're never treated as homework, so no
   reminders or "overdue" messages.
 - **Email (optional, if the person running the bot set it up)**: send
-  `/email you@school.edu`, then send back the 6-digit code from the email. You then
+  `/email you@gmail.com`, then send back the 6-digit code from the email. You then
   also get the morning list by email, and one email 2 hours before each deadline.
+  A personal address (Gmail, iCloud, Outlook.com) works best: school mail systems
+  sometimes silently hold back emails from new senders, even ones you mark as safe.
   Assignments due at the same time come in one email. Like reminders, it waits until
   your quiet hours end, and it doesn't come while reminders are paused.
 - **Commands** (also in the menu next to the message box):
@@ -88,7 +90,7 @@ one works.
 | `/pause 3h` | Pause reminders (`30m`, `until 18:00`, `off`) |
 | `/status` | Last sync, whether your token (or calendar feed) works, the next list and reminder, your reminder rhythm, email on or off |
 | `/settings` | Change time zone, morning time, quiet hours, reminder rhythm, email, Canvas token, calendar feed or Canvas address |
-| `/email you@school.edu` | Also get the morning list by email, plus a heads-up 2 hours before each deadline (`/email off` stops it) |
+| `/email you@gmail.com` | Also get the morning list by email, plus a heads-up 2 hours before each deadline (`/email off` stops it) |
 | `/feedback your message` | Send a note to the person who runs the bot: a bug, an idea, or that you're stuck (they see your Telegram name and ID, never your Canvas data) |
 | `/disconnect` | Delete everything the bot knows about you |
 
